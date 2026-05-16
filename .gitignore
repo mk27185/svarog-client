@@ -1,3 +1,7 @@
 .idea
 node_modules
 .env
+dist
+
+# Accidental emit next to TS/Vue sources (Vite entry uses *.ts)
+src/**/*.js
