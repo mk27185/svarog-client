@@ -1,0 +1,42 @@
+name: Deploy client (Krmelec)
+
+on:
+  push:
+    branches: [staging, main]
+  workflow_dispatch:
+
+concurrency:
+  group: krmelec-client-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  webhook:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Krmelec webhook
+        env:
+          HOOK_SECRET: ${{ secrets.SVAROG_WEBHOOK_SECRET }}
+          HOOK_BASE: ${{ secrets.SVAROG_WEBHOOK_BASE }}
+        run: |
+          set -euo pipefail
+          case "${GITHUB_REF}" in
+            refs/heads/staging)
+              HOOK_ID="svarog-client-stage"
+              ;;
+            refs/heads/main)
+              HOOK_ID="svarog-client-prod"
+              ;;
+            *)
+              echo "Skip: branch not wired for Krmelec (${GITHUB_REF})"
+              exit 0
+              ;;
+          esac
+          BASE="${HOOK_BASE%/}"
+          curl -fsS \
+            --connect-timeout 30 \
+            --max-time 600 \
+            -X POST \
+            "${BASE}/hooks/${HOOK_ID}?secret=${HOOK_SECRET}"
