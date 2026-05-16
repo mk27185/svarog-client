@@ -2,7 +2,7 @@
 node_modules
 .env
 .env.staging
-.env.production-nope-nechatasi
+.env.production
 .env.*.local
 dist
 
