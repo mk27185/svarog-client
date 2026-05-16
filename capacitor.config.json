@@ -1,8 +1,0 @@
-{
-  "appId": "cz.svarog.client",
-  "appName": "Svarog",
-  "webDir": "dist",
-  "server": {
-    "androidScheme": "https"
-  }
-}
