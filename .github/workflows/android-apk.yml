@@ -32,6 +32,11 @@ jobs:
           node-version: "20"
           cache: npm
 
+      # Vite řeší TS přes tsconfig v designu (@vue/tsconfig); vue-tsc v clientu řeší typy z design .vue přes paths.vue v tsconfig.app.json
+      - name: Install svarog-design dependencies
+        working-directory: ${{ github.workspace }}/../svarog-design
+        run: npm ci
+
       - run: npm ci
 
       - run: npm run build
