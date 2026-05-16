@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import TileViewer from './tile-viewer/TileViewer.vue'
+import { RouterView } from 'vue-router';
 </script>
 
 <template>
-  <TileViewer />
+  <RouterView />
 </template>
