@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - authorization-apk
+  workflow_dispatch:
 
 concurrency:
   group: android-apk-${{ github.workflow }}-${{ github.ref }}
@@ -39,7 +40,22 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run build
+      # Produční API URL musí existovat už při vite build (--mode production), jinak v APK zůstane localhost.
+      # V nastavení repa: Secrets and variables → Actions → Repository secrets: VITE_API_URL = https://api.desperates.net
+      # (bez koncového lomítka — v kódu se přidává /trpc)
+      - name: Verify VITE_API_URL
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: |
+          if [ -z "$VITE_API_URL" ]; then
+            echo "::error::Missing repository secret VITE_API_URL (např. https://api.desperates.net)."
+            exit 1
+          fi
+
+      - name: Build web (production mode)
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: npm run build:production
 
       - name: Sync Capacitor Android
         run: npx cap sync android
@@ -81,7 +97,7 @@ jobs:
             gh release create continuous \
               --repo "${{ github.repository }}" \
               --title "Main — debug APK" \
-              --notes "Automatický debug build z větve \`main\`. Soubor **$DEST** se při každém pushi přepíše (stejný odkaz ke stažení)." \
+              --notes "Automatický debug build z větve \`main\`. Soubor **$DEST** se při každém pushi přepíše (stejný odkaz ke stažení). Produční API nastav pomocí secretního **\`VITE_API_URL\`** v Actions." \
               --prerelease
           fi
           gh release upload continuous --repo "${{ github.repository }}" "$DEST" --clobber
