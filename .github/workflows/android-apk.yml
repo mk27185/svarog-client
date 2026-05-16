@@ -13,7 +13,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       actions: write
 
     steps:
@@ -53,3 +53,22 @@ jobs:
           name: svarog-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # Artifacts nejsou v gitu a časem expirují. Release „continuous“ drží jeden
+      # trvalý odkaz ke stažení přímo u repozitáře (záložka Releases).
+      - name: Publish APK to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SRC="android/app/build/outputs/apk/debug/app-debug.apk"
+          DEST="svarog-debug-main.apk"
+          cp "$SRC" "$DEST"
+          if ! gh release view continuous --repo "${{ github.repository }}" &>/dev/null; then
+            gh release create continuous \
+              --repo "${{ github.repository }}" \
+              --title "Main — debug APK" \
+              --notes "Automatický debug build z větve \`main\`. Soubor **$DEST** se při každém pushi přepíše (stejný odkaz ke stažení)." \
+              --prerelease
+          fi
+          gh release upload continuous --repo "${{ github.repository }}" "$DEST" --clobber
