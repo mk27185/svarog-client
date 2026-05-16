@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "vue": ["./node_modules/vue/dist/vue.d.mts"],
+      "@/types/index": ["../svarog-design/src/types/index.ts"],
+      "@/types": ["../svarog-design/src/types/index.ts"],
+      "@/icons/*": ["../svarog-design/src/icons/*"],
+      "@/atoms/*": ["../svarog-design/src/atoms/*"],
+      "@/molecules/*": ["../svarog-design/src/molecules/*"],
+      "@/organisms/*": ["../svarog-design/src/organisms/*"],
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue", "src/env.d.ts"]
+}

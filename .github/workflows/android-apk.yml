@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - authorization-apk
 
 concurrency:
   group: android-apk-${{ github.workflow }}-${{ github.ref }}
@@ -19,10 +20,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # package.json: svarog-design jako file:../svarog-design — v CI musí být sourozenec vedle tohoto repa
+      - name: Checkout svarog-design
+        run: |
+          git clone --depth 1 \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository_owner }}/svarog-design.git" \
+            "${{ github.workspace }}/../svarog-design"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
+
+      # Vite řeší TS přes tsconfig v designu (@vue/tsconfig); vue-tsc v clientu řeší typy z design .vue přes paths.vue v tsconfig.app.json
+      - name: Install svarog-design dependencies
+        working-directory: ${{ github.workspace }}/../svarog-design
+        run: npm ci
 
       - run: npm ci
 

@@ -1,0 +1,3 @@
+@import "svarog-design/style.css";
+@source "../node_modules/svarog-design/src";
+@source "./**/*.{vue,ts}";

@@ -1,6 +1,9 @@
 .idea
 node_modules
 .env
+.env.staging
+.env.production
+.env.*.local
 dist
 
 # Accidental emit next to TS/Vue sources (Vite entry uses *.ts)
