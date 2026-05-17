@@ -16,16 +16,12 @@
 
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { loadTile, type TileDescriptor } from './tile-loader'
+import { geoToWorld, tileCentre } from './geo'
+import { loadTile, prepareTilesRemote, type TileDescriptor } from './tile-loader'
+import { tileAssetsPathPrefix, tileManifestUrl } from './tiles-config'
 
 // Prague centre elevation in Three.js world Y (GLTF Z→Y rotation, absolute metres)
 const ELEV_Y = 244.0
-
-// ── metres per degree at a given latitude ─────────────────────────
-const MPD_LAT = 111_320.0
-function mpdLon(lat: number): number {
-  return MPD_LAT * Math.cos((lat * Math.PI) / 180)
-}
 
 // ── manifest types ─────────────────────────────────────────────────
 interface ManifestTile {
@@ -39,30 +35,13 @@ interface Manifest {
   tiles: ManifestTile[]
 }
 
-// ── helpers ────────────────────────────────────────────────────────
-function tileCentre(bbox: [number, number, number, number]): { lat: number; lon: number } {
-  return {
-    lat: (bbox[0] + bbox[2]) / 2,
-    lon: (bbox[1] + bbox[3]) / 2,
-  }
-}
-
-function geoToWorld(
-  lat: number,
-  lon: number,
-  originLat: number,
-  originLon: number,
-): { offsetX: number; offsetZ: number } {
-  const lon0 = mpdLon(originLat)
-  return {
-    offsetX: (lon - originLon) * lon0,
-    offsetZ: -(lat - originLat) * MPD_LAT,   // south = +Z
-  }
-}
-
 // ── scene entry point ──────────────────────────────────────────────
 export interface SceneHandle {
   renderer: THREE.WebGLRenderer
+  /** Manifest grid centroid (WGS84); use with geoToWorld for GPS. */
+  origin: { lat: number; lon: number }
+  /** Move orbit target (and camera) to the GPS position projected into this grid. */
+  focusAtGps: (lat: number, lon: number) => void
   dispose: () => void
 }
 
@@ -93,7 +72,13 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   scene.add(sun)
 
   // ── fetch manifest ────────────────────────────────────────────────
-  const res      = await fetch('/tiles/tile-manifest.json')
+  const assetsPrefix = tileAssetsPathPrefix()
+  prepareTilesRemote(assetsPrefix)
+
+  const res = await fetch(tileManifestUrl())
+  if (!res.ok) {
+    throw new Error(`Tile manifest HTTP ${res.status}: ${tileManifestUrl()}`)
+  }
   const manifest = await res.json() as Manifest
 
   // Find the geographic centre of the full grid (used as world origin)
@@ -121,6 +106,29 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   controls.enableDamping = true
   controls.dampingFactor = 0.08
 
+  const cameraOffset = new THREE.Vector3().subVectors(camera.position, controls.target)
+
+  // ── user position marker (GPS) ────────────────────────────────────
+  const markerGeom = new THREE.ConeGeometry(3.5, 14, 10)
+  const markerMat  = new THREE.MeshStandardMaterial({
+    color: 0xe84848,
+    emissive: 0x351010,
+    roughness: 0.45,
+    metalness: 0.1,
+  })
+  const userMarker = new THREE.Mesh(markerGeom, markerMat)
+  userMarker.castShadow = true
+  userMarker.visible    = false
+  scene.add(userMarker)
+
+  function focusAtGps(lat: number, lon: number) {
+    const { offsetX, offsetZ } = geoToWorld(lat, lon, originLat, originLon)
+    controls.target.set(offsetX, ELEV_Y, offsetZ)
+    camera.position.copy(controls.target).add(cameraOffset)
+    userMarker.position.set(offsetX, ELEV_Y + 16, offsetZ)
+    userMarker.visible = true
+  }
+
   // ── build tile descriptors ────────────────────────────────────────
   const descriptors: TileDescriptor[] = manifest.tiles.map((t) => {
     const [z, x, y] = t.name.split('/').map(Number)
@@ -142,7 +150,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
     for (let i = 0; i < descriptors.length; i += BATCH) {
       await Promise.allSettled(
         descriptors.slice(i, i + BATCH).map((d) =>
-          loadTile(scene, d).catch((e) =>
+          loadTile(scene, d, assetsPrefix).catch((e) =>
             console.warn(`tile ${d.z}/${d.x}/${d.y} failed`, e),
           ),
         ),
@@ -170,9 +178,14 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
 
   return {
     renderer,
+    origin: { lat: originLat, lon: originLon },
+    focusAtGps,
     dispose() {
       cancelAnimationFrame(animId)
       ro.disconnect()
+      scene.remove(userMarker)
+      markerGeom.dispose()
+      markerMat.dispose()
       controls.dispose()
       renderer.dispose()
     },

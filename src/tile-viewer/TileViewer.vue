@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { initScene, type SceneHandle } from './scene'
+import { useTileViewerGeolocation } from './useTileViewerGeolocation'
 
 const canvasRef = ref<HTMLCanvasElement>()
 let handle: SceneHandle | null = null
@@ -8,19 +9,43 @@ let handle: SceneHandle | null = null
 const status  = ref<'loading' | 'ready' | 'error'>('loading')
 const message = ref('Initialising scene…')
 
+const geo       = useTileViewerGeolocation()
+const geoBanner = ref<string | null>(null)
+
+watch(
+  () => [geo.status.value, geo.message.value] as const,
+  ([st, msg]) => {
+    if (st === 'denied' || st === 'unsupported') {
+      geoBanner.value = msg ?? 'GPS nepoužito — zůstává náhled na střed výřezu.'
+    } else if (st === 'error') {
+      geoBanner.value = msg ?? 'GPS chyba'
+    }
+  },
+)
+
 onMounted(async () => {
   if (!canvasRef.value) return
   try {
-    handle  = await initScene(canvasRef.value)
+    handle = await initScene(canvasRef.value)
     status.value  = 'ready'
     message.value = ''
+
+    geoBanner.value = 'Zjišťuji polohu (GPS)…'
+    void geo.start((p) => {
+      handle?.focusAtGps(p.latitude, p.longitude)
+      const acc = p.accuracy > 0 ? ` ±${Math.round(p.accuracy)} m` : ''
+      geoBanner.value = `GPS ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}${acc}`
+    })
   } catch (e) {
     status.value  = 'error'
     message.value = String(e)
   }
 })
 
-onBeforeUnmount(() => handle?.dispose())
+onBeforeUnmount(() => {
+  geo.stop()
+  handle?.dispose()
+})
 </script>
 
 <template>
@@ -41,6 +66,8 @@ onBeforeUnmount(() => handle?.dispose())
     </div>
 
     <div class="hint">Orbit · Scroll zoom · Right-drag pan</div>
+
+    <div v-if="geoBanner" class="gps-strip">{{ geoBanner }}</div>
   </div>
 </template>
 
@@ -139,5 +166,24 @@ onBeforeUnmount(() => handle?.dispose())
   font-family: system-ui, sans-serif;
   font-size: 11px;
   letter-spacing: 0.04em;
+}
+
+.gps-strip {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(92vw, 480px);
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(8, 12, 24, 0.75);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(80, 120, 180, 0.28);
+  color: rgba(210, 228, 248, 0.92);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-align: center;
+  pointer-events: none;
 }
 </style>

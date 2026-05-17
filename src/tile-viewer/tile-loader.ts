@@ -24,6 +24,14 @@ import { createSdfMaterial, updateSdfTexture } from './sdf-material'
 const gltfLoader = new GLTFLoader()
 const texLoader  = new THREE.TextureLoader()
 
+/** Call before loading tiles from another origin (e.g. CDN). */
+export function prepareTilesRemote(assetsPrefix: string): void {
+  if (/^https?:\/\//i.test(assetsPrefix)) {
+    gltfLoader.crossOrigin = 'anonymous'
+    texLoader.crossOrigin  = 'anonymous'
+  }
+}
+
 export interface TileDescriptor {
   z: number
   x: number
@@ -56,9 +64,10 @@ const GLOBAL_ELEV_RANGE =  70.0
 export async function loadTile(
   scene: THREE.Scene,
   desc: TileDescriptor,
+  assetsPathPrefix: string,
 ): Promise<LoadedTile> {
   const { z, x, y } = desc
-  const base = `/tiles/${z}/${x}/${y}/${y}`
+  const base = `${assetsPathPrefix}/${z}/${x}/${y}/${y}`
 
   const gltf = await gltfLoader.loadAsync(`${base}.glb`)
 
