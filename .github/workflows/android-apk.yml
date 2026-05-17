@@ -43,6 +43,10 @@ jobs:
       # Produční API URL musí existovat už při vite build (--mode production), jinak v APK zůstane localhost.
       # V nastavení repa: Secrets and variables → Actions → Repository secrets: VITE_API_URL = https://api.desperates.net
       # (bez koncového lomítka — v kódu se přidává /trpc)
+      #
+      # Tiles: ve WebView APK neexistuje stejný host jako u nasazené SPA — relativní /tiles by mířilo do prázdna.
+      # Volitelný secret VITE_TILES_URL_PREFIX (bez koncového lomítka), např. https://game.desperates.net/tiles
+      # Když chybí, použije se výchozí game.desperates.net (lze přepsat secretem pro stage jiného hosta).
       - name: Verify VITE_API_URL
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
@@ -55,7 +59,14 @@ jobs:
       - name: Build web (production mode)
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
-        run: npm run build:production
+          VITE_TILES_URL_PREFIX: ${{ secrets.VITE_TILES_URL_PREFIX }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VITE_TILES_URL_PREFIX:-}" ]; then
+            export VITE_TILES_URL_PREFIX="https://game.desperates.net/tiles"
+            echo "VITE_TILES_URL_PREFIX prázdný — používám výchozí pro APK: $VITE_TILES_URL_PREFIX"
+          fi
+          npm run build:production
 
       - name: Sync Capacitor Android
         run: npx cap sync android
@@ -97,7 +108,7 @@ jobs:
             gh release create continuous \
               --repo "${{ github.repository }}" \
               --title "Main — debug APK" \
-              --notes "Automatický debug build z větve \`main\`. Soubor **$DEST** se při každém pushi přepíše (stejný odkaz ke stažení). Produční API nastav pomocí secretního **\`VITE_API_URL\`** v Actions." \
+              --notes "Automatický debug build z větve \`main\`. Soubor **$DEST** se při každém pushi přepíše (stejný odkaz ke stažení). Produční API: secret **\`VITE_API_URL\`**. Dlaždice v APK: volitelně **\`VITE_TILES_URL_PREFIX\`** (jinak \`https://game.desperates.net/tiles\`)." \
               --prerelease
           fi
           gh release upload continuous --repo "${{ github.repository }}" "$DEST" --clobber
