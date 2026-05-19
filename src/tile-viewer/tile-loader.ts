@@ -21,6 +21,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
 import { createSdfMaterial, updateSdfTexture } from './sdf-material'
+import { getBuildingMaterial } from './shared-materials'
 import { mpdLon } from './geo'
 
 const dracoLoader = new DRACOLoader()
@@ -59,9 +60,10 @@ export interface TileDescriptor {
 }
 
 export interface LoadedTile {
-  group:      THREE.Group
-  descriptor: TileDescriptor
-  elevMin:    number
+  group:            THREE.Group
+  descriptor:       TileDescriptor
+  elevMin:          number
+  terrainMaterial?: THREE.ShaderMaterial
 }
 
 /**
@@ -75,15 +77,6 @@ export interface TileExtras {
   sdf_uv_width_m?:  number
   sdf_uv_height_m?: number
 }
-
-// Shared building material — flat-shaded blocks, no SDF needed
-const BUILDING_MAT = new THREE.MeshStandardMaterial({
-  color: 0x9ba5b4,
-  roughness: 0.8,
-  metalness: 0.05,
-  side: THREE.DoubleSide,
-  flatShading: true,
-})
 
 // Fallback elevation window when GLB extras are absent (old tiles without metadata).
 const FALLBACK_ELEV_MIN   = 220.0
@@ -124,6 +117,7 @@ export async function loadTile(
 
   // ── create terrain material with consistent elevation range ──────
   const sdfMat = createSdfMaterial({ elevMin, elevRange })
+  const buildingMat = getBuildingMaterial()
 
   gltf.scene.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return
@@ -131,7 +125,7 @@ export async function loadTile(
       obj.material      = sdfMat
       obj.receiveShadow = true
     } else if (obj.name === 'buildings') {
-      obj.material      = BUILDING_MAT
+      obj.material      = buildingMat
       obj.castShadow    = true
       obj.receiveShadow = true
     }
@@ -157,7 +151,7 @@ export async function loadTile(
     loadSdf(base, sdfMat, `${z}/${x}/${y}`)
   }
 
-  return { group: gltf.scene, descriptor: desc, elevMin }
+  return { group: gltf.scene, descriptor: desc, elevMin, terrainMaterial: sdfMat }
 }
 
 /**
