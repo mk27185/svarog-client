@@ -24,7 +24,6 @@
 import * as THREE from 'three'
 
 const VERT = /* glsl */`
-  // TEXCOORD_0 baked by exporter — no computation needed
   out vec2  vSdfUv;
   out vec3  vWorldNormal;
   out float vElevNorm;
@@ -33,14 +32,12 @@ const VERT = /* glsl */`
   uniform float uElevRange;
 
   void main() {
-    vSdfUv = uv;                    // direct: matches SDF PNG coordinate system
+    vSdfUv = uv;   // TEXCOORD_0 baked by exporter, reordered to match Draco vertex order
 
     // position.z = raw elevation (GLTF Z-up space, before node rotation)
     vElevNorm = clamp((position.z - uElevMin) / max(uElevRange, 1.0), 0.0, 1.0);
 
-    // Smooth normal (computeVertexNormals) → world space via modelMatrix
     vWorldNormal = normalize(mat3(modelMatrix) * normal);
-
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `
@@ -88,9 +85,8 @@ const FRAG = /* glsl */`
 
 export interface SdfMaterialOptions {
   sdfTexture?: THREE.Texture
-  /** Prague global elevation window (metres). Defaults cover the full dataset. */
-  elevMin?:  number
-  elevRange?: number
+  elevMin?:    number
+  elevRange?:  number
 }
 
 export function createSdfMaterial(opts: SdfMaterialOptions = {}): THREE.ShaderMaterial {
@@ -114,4 +110,5 @@ export function updateSdfTexture(
 ): void {
   mat.uniforms.uSdfTexture.value = sdfTexture
   mat.uniforms.uHasSdf.value     = true
+  mat.needsUpdate                = true
 }

@@ -23,6 +23,7 @@
     "@capacitor/status-bar": "^7.0.3",
     "@trpc/client": "^11.7.1",
     "pinia": "^3.0.3",
+    "svarog-contracts": "file:../svarog-contracts",
     "svarog-design": "file:../svarog-design",
     "three": "^0.181.0",
     "vue": "^3.5.22",
