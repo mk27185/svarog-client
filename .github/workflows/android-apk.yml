@@ -21,12 +21,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # package.json: svarog-design jako file:../svarog-design — v CI musí být sourozenec vedle tohoto repa
+      # package.json: svarog-design a svarog-contracts jako file:../* — v CI musí být sourozenci vedle tohoto repa
       - name: Checkout svarog-design
         run: |
           git clone --depth 1 \
             "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository_owner }}/svarog-design.git" \
             "${{ github.workspace }}/../svarog-design"
+
+      - name: Checkout svarog-contracts
+        run: |
+          git clone --depth 1 \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository_owner }}/svarog-contracts.git" \
+            "${{ github.workspace }}/../svarog-contracts"
 
       - uses: actions/setup-node@v4
         with:
@@ -37,6 +43,11 @@ jobs:
       - name: Install svarog-design dependencies
         working-directory: ${{ github.workspace }}/../svarog-design
         run: npm ci
+
+      # dist/ je gitignored — musíme ho sestavit, aby vue-tsc vidělo typy
+      - name: Build svarog-contracts
+        working-directory: ${{ github.workspace }}/../svarog-contracts
+        run: npm ci && npm run build
 
       - run: npm ci
 

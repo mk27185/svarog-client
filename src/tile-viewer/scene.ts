@@ -14,7 +14,7 @@
 
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import worldConfig from 'svarog-contracts/world-config.json'
+import { TILE_LOAD_RADIUS } from 'svarog-contracts'
 import {
   geoToWorld,
   boundsToTileRange,
@@ -48,10 +48,10 @@ interface Tileset {
 // ── constants ─────────────────────────────────────────────────────────────────
 
 /**
- * Half-side of the loaded tile window, sourced from svarog-contracts/world-config.json.
- * load_radius_tiles:1 → 3×3 grid, 2 → 5×5, etc.
+ * Half-side of the loaded tile window, sourced from svarog-contracts (TILE_LOAD_RADIUS).
+ * 1 → 3×3 grid, 2 → 5×5, etc.
  */
-const WINDOW_HALF = worldConfig.load_radius_tiles
+const WINDOW_HALF = TILE_LOAD_RADIUS
 const BATCH       = 4
 
 // ── scene entry point ──────────────────────────────────────────────────────────
