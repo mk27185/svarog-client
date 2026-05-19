@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { SdDrawer } from 'svarog-design'
 import { initScene, type SceneHandle } from './scene'
 import { useTileViewerGeolocation } from './useTileViewerGeolocation'
+import TileViewerSettingsPanel from './TileViewerSettingsPanel.vue'
 
 const canvasRef = ref<HTMLCanvasElement>()
 let handle: SceneHandle | null = null
 
 const status  = ref<'loading' | 'ready' | 'error'>('loading')
 const message = ref('Initialising scene…')
+const settingsOpen = ref(false)
 
 const geo       = useTileViewerGeolocation()
 const geoBanner = ref<string | null>(null)
@@ -59,15 +62,29 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="legend">
-      <span class="dot terrain" /> terrain
-      <span class="dot road"    /> SDF roads
-      <span class="dot building"/> buildings
-    </div>
-
-    <div class="hint">Orbit · Scroll zoom · Right-drag pan</div>
+    <button
+      v-if="status === 'ready'"
+      type="button"
+      class="fab-settings"
+      aria-label="Nastavení vzhledu"
+      @click="settingsOpen = true"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+      </svg>
+    </button>
 
     <div v-if="geoBanner" class="gps-strip">{{ geoBanner }}</div>
+
+    <SdDrawer
+      v-model:is-open="settingsOpen"
+      title="Vzhled mapy"
+      position="right"
+      size="md"
+    >
+      <TileViewerSettingsPanel />
+    </SdDrawer>
   </div>
 </template>
 
@@ -91,6 +108,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   pointer-events: none;
+  z-index: 10;
 }
 
 .badge {
@@ -129,48 +147,32 @@ onBeforeUnmount(() => {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.legend {
+.fab-settings {
   position: absolute;
-  bottom: 20px;
-  left: 20px;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 15;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 8px 14px;
-  border-radius: 6px;
-  background: rgba(10, 12, 20, 0.65);
-  backdrop-filter: blur(6px);
-  color: rgba(220, 232, 248, 0.9);
-  font-family: system-ui, sans-serif;
-  font-size: 12px;
-  letter-spacing: 0.03em;
-  border: 1px solid rgba(80, 120, 180, 0.25);
-}
-
-.dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(120, 160, 210, 0.35);
   border-radius: 50%;
+  background: rgba(12, 18, 32, 0.82);
+  color: rgba(220, 232, 248, 0.95);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.15s ease;
 }
 
-.dot.terrain  { background: #5a8847; }
-.dot.road     { background: #aaa8b8; }
-.dot.building { background: #9ba5b4; }
-
-.hint {
-  position: absolute;
-  bottom: 20px;
-  right: 20px;
-  color: rgba(200, 215, 235, 0.55);
-  font-family: system-ui, sans-serif;
-  font-size: 11px;
-  letter-spacing: 0.04em;
+.fab-settings:hover {
+  background: rgba(24, 36, 56, 0.92);
 }
 
 .gps-strip {
   position: absolute;
-  top: 16px;
+  top: max(16px, env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
   max-width: min(92vw, 480px);
@@ -185,5 +187,6 @@ onBeforeUnmount(() => {
   letter-spacing: 0.02em;
   text-align: center;
   pointer-events: none;
+  z-index: 12;
 }
 </style>

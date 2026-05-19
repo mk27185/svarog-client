@@ -23,6 +23,18 @@ import {
 } from './geo'
 import { loadTile, prepareTilesRemote, type LoadedTile, type TileDescriptor } from './tile-loader'
 import { tilesetUrl, tileAssetsPathPrefix } from './tiles-config'
+import type { TileViewerTheme } from './theme'
+import {
+  applyThemeToScene,
+  getTheme,
+  setGlobalElevation,
+  setTheme as applyStoredTheme,
+  subscribeTheme,
+  syncSunOnAllMaterials,
+  unregisterTerrainMaterial,
+  type SceneThemeTargets,
+} from './theme-store'
+import { createPostProcessing, resizeComposer } from './post-processing'
 
 // ── Tileset descriptor (TileJSON 3.0.0 + svarog extras) ───────────────────────
 
@@ -60,6 +72,8 @@ export interface SceneHandle {
   renderer: THREE.WebGLRenderer
   origin: { lat: number; lon: number }
   focusAtGps: (lat: number, lon: number) => void
+  setTheme: (partial: Partial<TileViewerTheme>) => TileViewerTheme
+  getTheme: () => Readonly<TileViewerTheme>
   dispose: () => void
 }
 
@@ -79,14 +93,19 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   scene.fog        = new THREE.Fog(0x7faed0, 2000, 4500)
 
   // ── lights ─────────────────────────────────────────────────────────────────
-  scene.add(new THREE.AmbientLight(0xfff4e8, 0.55))
+  const ambient = new THREE.AmbientLight(0xfff4e8, 0.55)
+  scene.add(ambient)
   const sun = new THREE.DirectionalLight(0xfff8f0, 1.5)
   sun.position.set(600, 900, 400)
+  sun.target.position.set(0, 0, 0)
   sun.castShadow = true
   sun.shadow.mapSize.set(2048, 2048)
   const r = 1400
   Object.assign(sun.shadow.camera, { near: 1, far: 5000, left: -r, right: r, bottom: -r, top: r })
+  scene.add(sun.target)
   scene.add(sun)
+
+  const sceneTargets: SceneThemeTargets = { scene, ambient, sun, renderer }
 
   // ── fetch tileset.json ─────────────────────────────────────────────────────
   const assetsPrefix = tileAssetsPathPrefix()
@@ -109,6 +128,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   const globalElevMin   = tileset.extras?.elev_min  ?? 220
   const globalElevMax   = tileset.extras?.elev_max  ?? 360
   const globalElevRange = Math.max(globalElevMax - globalElevMin, 1)
+  setGlobalElevation(globalElevMin, globalElevRange)
 
   // ELEV_Y: Y-position of the camera target (= terrain surface height).
   // Initialised from the tileset global elev_min; updated dynamically after the
@@ -132,6 +152,8 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   controls.maxPolarAngle = Math.PI / 2.05
   controls.enableDamping = true
   controls.dampingFactor = 0.08
+
+  const { composer, colorGrade } = createPostProcessing(renderer, scene, camera)
 
   // Fixed offset from target → camera so that focusAtGps just moves the target
   // and the camera follows at the same relative distance and angle.
@@ -204,17 +226,31 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
     const lt = liveTiles.get(key)
     if (!lt) return
     scene.remove(lt.group)
+    if (lt.terrainMaterial) {
+      unregisterTerrainMaterial(lt.terrainMaterial)
+      lt.terrainMaterial.dispose()
+    }
     lt.group.traverse((obj) => {
       if (!(obj instanceof THREE.Mesh)) return
       obj.geometry.dispose()
-      if (Array.isArray(obj.material)) {
-        obj.material.forEach((m) => m.dispose())
-      } else {
-        obj.material.dispose()
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
+      for (const m of mats) {
+        if (m !== lt.terrainMaterial) m.dispose()
       }
     })
     liveTiles.delete(key)
   }
+
+  function applyFullTheme(theme: TileViewerTheme): void {
+    applyThemeToScene(sceneTargets, theme)
+    colorGrade.applyTheme(theme)
+    syncSunOnAllMaterials(sun)
+  }
+
+  applyFullTheme(getTheme())
+  const unsubTheme = subscribeTheme((theme) => {
+    applyFullTheme(theme)
+  })
 
   let elevCalibrated = false
 
@@ -315,7 +351,8 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   function animate() {
     animId = requestAnimationFrame(animate)
     controls.update()
-    renderer.render(scene, camera)
+    syncSunOnAllMaterials(sun)
+    composer.render()
   }
   animate()
 
@@ -323,6 +360,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   const ro = new ResizeObserver(() => {
     const w = canvas.clientWidth, h = canvas.clientHeight
     renderer.setSize(w, h, false)
+    resizeComposer(composer, w, h)
     camera.aspect = w / h
     camera.updateProjectionMatrix()
   })
@@ -332,10 +370,17 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
     renderer,
     origin: { lat: originLat, lon: originLon },
     focusAtGps,
+    setTheme(partial) {
+      const theme = applyStoredTheme(partial)
+      applyFullTheme(theme)
+      return theme
+    },
+    getTheme,
     dispose() {
       cancelAnimationFrame(animId)
       ro.disconnect()
-      // Unload all live tiles
+      unsubTheme()
+      composer.dispose()
       for (const key of [...liveTiles.keys()]) unloadTile(key)
       scene.remove(userMarker)
       markerGeom.dispose()
