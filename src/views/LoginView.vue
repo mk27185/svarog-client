@@ -32,7 +32,7 @@ async function submit() {
   <div class="min-h-dvh flex items-center justify-center bg-background-soft px-4">
     <SdCard bordered shadow="sm" class="w-full max-w-md" size="lg">
       <template #header>
-        <SdText as="h1" size="xl" weight="semibold">Přihlášení 10</SdText>
+        <SdText as="h1" size="xl" weight="semibold">Přihlášení 11</SdText>
       </template>
       <div class="space-y-4">
         <SdText v-if="error" as="p" size="sm" color="error">{{ error }}</SdText>
