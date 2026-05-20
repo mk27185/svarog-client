@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import type { TileViewerTheme } from './theme'
@@ -55,6 +56,8 @@ export function createPostProcessing(
 ): { composer: EffectComposer; colorGrade: ColorGradePass } {
   const composer = new EffectComposer(renderer)
   composer.addPass(new RenderPass(scene, camera))
+  // Sky shader outputs HDR; without this pass the framebuffer clamps to white.
+  composer.addPass(new OutputPass())
 
   const gradePass = new ShaderPass(ColorGradeShader)
   composer.addPass(gradePass)

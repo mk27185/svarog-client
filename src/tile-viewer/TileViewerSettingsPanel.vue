@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { SdToggle, SdButton, SdText, SdDivider } from 'svarog-design'
 import type { TileViewerTheme, HighwayColorStop } from './theme'
 import { DEFAULT_HIGHWAY_STOPS } from './theme'
@@ -42,6 +42,17 @@ function onNumber(key: keyof TileViewerTheme, e: Event) {
   if (!Number.isNaN(v)) patch(key, v as TileViewerTheme[typeof key])
 }
 
+/** UI slider 0–100 ↔ fogDensity ≈ 0.00005–0.0005 */
+const fogDensityUi = computed({
+  get: () => Math.round(theme.value.fogDensity * 100_000),
+  set: (ui) => patch('fogDensity', ui / 100_000),
+})
+
+function onFogDensityUi(e: Event) {
+  const v = parseFloat((e.target as HTMLInputElement).value)
+  if (!Number.isNaN(v)) fogDensityUi.value = v
+}
+
 function onReset() {
   resetTheme()
 }
@@ -60,6 +71,11 @@ const stopLabels = [
 
 <template>
   <div class="settings">
+    <p class="intro">
+      Obloha je 3D model (Preetham) — barvy horizontu a mlhy ovlivní „Horizont“ a „Mlha“.
+      Terén má vlastní shader; slunce výška/azimut mění stíny na mapě i na terénu.
+    </p>
+
     <section>
       <SdText as="h3" size="sm" weight="semibold">Terén</SdText>
       <label class="row">
@@ -140,20 +156,39 @@ const stopLabels = [
         <input type="color" :value="theme.building" @input="onColor('building', $event)" />
       </label>
       <label class="row">
-        <span>Obloha</span>
+        <span>Horizont / ambient nebe</span>
         <input type="color" :value="theme.sky" @input="onColor('sky', $event)" />
       </label>
       <label class="row">
-        <span>Mlha</span>
+        <span>Barva mlhy</span>
         <input type="color" :value="theme.fog" @input="onColor('fog', $event)" />
       </label>
       <label class="row">
-        <span>Mlha — začátek (m)</span>
-        <input type="range" min="500" max="4000" step="50" :value="theme.fogNear" @input="onNumber('fogNear', $event)" />
+        <span>Mlha — síla ({{ fogDensityUi }})</span>
+        <input
+          type="range"
+          min="5"
+          max="50"
+          step="1"
+          :value="fogDensityUi"
+          @input="onFogDensityUi"
+        />
       </label>
       <label class="row">
-        <span>Mlha — konec (m)</span>
-        <input type="range" min="2000" max="8000" step="100" :value="theme.fogFar" @input="onNumber('fogFar', $event)" />
+        <span>Mraky — pokrytí ({{ Math.round(theme.cloudCoverage * 100) }} %)</span>
+        <input type="range" min="0" max="1" step="0.05" :value="theme.cloudCoverage" @input="onNumber('cloudCoverage', $event)" />
+      </label>
+      <label class="row">
+        <span>Obloha — zakalení (turbidity)</span>
+        <input type="range" min="1" max="10" step="0.5" :value="theme.turbidity" @input="onNumber('turbidity', $event)" />
+      </label>
+      <label class="row">
+        <span>Slunce — výška ({{ theme.sunElevation }}°)</span>
+        <input type="range" min="5" max="80" step="1" :value="theme.sunElevation" @input="onNumber('sunElevation', $event)" />
+      </label>
+      <label class="row">
+        <span>Slunce — azimut ({{ theme.sunAzimuth }}°)</span>
+        <input type="range" min="0" max="360" step="5" :value="theme.sunAzimuth" @input="onNumber('sunAzimuth', $event)" />
       </label>
     </section>
 
@@ -162,8 +197,8 @@ const stopLabels = [
     <section>
       <SdText as="h3" size="sm" weight="semibold">Osvětlení</SdText>
       <label class="row">
-        <span>Ambient</span>
-        <input type="range" min="0" max="1.5" step="0.05" :value="theme.ambientIntensity" @input="onNumber('ambientIntensity', $event)" />
+        <span>Hemisféra (ambient)</span>
+        <input type="range" min="0" max="2" step="0.05" :value="theme.ambientIntensity" @input="onNumber('ambientIntensity', $event)" />
       </label>
       <label class="row">
         <span>Slunce — intenzita</span>
@@ -174,8 +209,8 @@ const stopLabels = [
         <input type="color" :value="theme.sunColor" @input="onColor('sunColor', $event)" />
       </label>
       <label class="row">
-        <span>Exposure (tone mapping)</span>
-        <input type="range" min="0.3" max="2.5" step="0.05" :value="theme.exposure" @input="onNumber('exposure', $event)" />
+        <span>Exposure (jas celé scény)</span>
+        <input type="range" min="0.5" max="2.5" step="0.05" :value="theme.exposure" @input="onNumber('exposure', $event)" />
       </label>
     </section>
 
@@ -221,6 +256,13 @@ const stopLabels = [
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.intro {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.4;
 }
 
 section {

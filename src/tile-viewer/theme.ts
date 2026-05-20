@@ -24,8 +24,18 @@ export interface TileViewerTheme {
   showNavmeshDebug: boolean
   sky: string
   fog: string
+  /** @deprecated Linear fog distances; scene uses FogExp2 (fogDensity). Kept for settings UI compat. */
   fogNear: number
   fogFar: number
+  fogDensity: number
+  turbidity: number
+  rayleigh: number
+  cloudCoverage: number
+  cloudBrightness: number
+  sunElevation: number
+  sunAzimuth: number
+  skyAmbientScale: number
+  groundAmbientScale: number
   ambientIntensity: number
   sunIntensity: number
   sunColor: string
@@ -63,10 +73,19 @@ export const DEFAULT_TILE_VIEWER_THEME: TileViewerTheme = {
   fog:         '#7faed0',
   fogNear:     2000,
   fogFar:      4500,
-  ambientIntensity: 0.40,
-  sunIntensity:     0.60,
-  sunColor:         '#fff8f0',
-  exposure:    1.0,
+  fogDensity:  0.00018,
+  turbidity:   2,
+  rayleigh:    1.5,
+  cloudCoverage: 0.25,
+  cloudBrightness: 0.9,
+  sunElevation: 42,
+  sunAzimuth:   160,
+  skyAmbientScale: 0.35,
+  groundAmbientScale: 1.0,
+  ambientIntensity: 0.65,
+  sunIntensity:     1.1,
+  sunColor:         '#fff5eb',
+  exposure:    0.95,
   saturation:  1.0,
   contrast:    1.0,
   vignette:    0.0,
@@ -104,11 +123,32 @@ export function saveThemeToStorage(theme: TileViewerTheme): void {
   }
 }
 
+const NUMERIC_THEME_KEYS: (keyof TileViewerTheme)[] = [
+  'fogNear', 'fogFar', 'fogDensity', 'turbidity', 'rayleigh', 'cloudCoverage', 'cloudBrightness',
+  'sunElevation', 'sunAzimuth', 'skyAmbientScale', 'groundAmbientScale',
+  'ambientIntensity', 'sunIntensity', 'exposure', 'saturation', 'contrast', 'vignette',
+]
+
+/** Ensure saved theme from older builds does not leave sliders on NaN / undefined. */
+function normalizeTheme(theme: TileViewerTheme): TileViewerTheme {
+  for (const key of NUMERIC_THEME_KEYS) {
+    const v = theme[key]
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      const fallback = DEFAULT_TILE_VIEWER_THEME[key] as number
+      Object.assign(theme, { [key]: fallback })
+    }
+  }
+  if (!Array.isArray(theme.highwayStops) || theme.highwayStops.length === 0) {
+    theme.highwayStops = DEFAULT_HIGHWAY_STOPS.map((s) => ({ ...s }))
+  }
+  return theme
+}
+
 export function mergeTheme(partial: Partial<TileViewerTheme>): TileViewerTheme {
   const base = { ...DEFAULT_TILE_VIEWER_THEME, highwayStops: DEFAULT_HIGHWAY_STOPS.map((s) => ({ ...s })) }
   const merged = { ...base, ...partial }
   if (partial.highwayStops) {
     merged.highwayStops = partial.highwayStops.map((s) => ({ ...s }))
   }
-  return merged
+  return normalizeTheme(merged)
 }

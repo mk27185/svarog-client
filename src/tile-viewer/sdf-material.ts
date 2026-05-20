@@ -52,7 +52,9 @@ const FRAG = /* glsl */`
   uniform vec3 uRailColor;
 
   uniform vec3  uSunDirection;
-  uniform float uAmbient;
+  uniform vec3  uSunColor;
+  uniform vec3  uSkyAmbient;
+  uniform vec3  uGroundAmbient;
   uniform float uSunStrength;
 
   in vec2  vSdfUv;
@@ -65,14 +67,18 @@ const FRAG = /* glsl */`
     return mix(uTerrainLow, uTerrainHigh, h);
   }
 
-  float lambert(vec3 n) {
-    float ndl = max(0.0, dot(normalize(n), uSunDirection));
-    return uAmbient + uSunStrength * ndl;
+  vec3 shade(vec3 n) {
+    vec3 N = normalize(n);
+    float hemi = N.y * 0.5 + 0.5;
+    vec3 ambient = mix(uGroundAmbient, uSkyAmbient, hemi);
+    float ndl = max(0.0, dot(N, uSunDirection));
+    vec3 direct = uSunColor * (uSunStrength * ndl);
+    return ambient + direct;
   }
 
   void main() {
     vec3 tColor = terrainColor(vElevNorm);
-    float light = lambert(vWorldNormal);
+    vec3 light = shade(vWorldNormal);
     tColor *= light;
 
     if (uHasLandcover) {
@@ -152,8 +158,10 @@ export function createSdfMaterial(opts: SdfMaterialOptions = {}): THREE.ShaderMa
       uGreenColor:        { value: new THREE.Vector3(0.32, 0.55, 0.28) },
       uRailColor:         { value: new THREE.Vector3(0.45, 0.42, 0.40) },
       uSunDirection:      { value: new THREE.Vector3(0.6, 1.0, 0.5).normalize() },
-      uAmbient:           { value: 0.40 },
-      uSunStrength:       { value: 0.60 },
+      uSunColor:            { value: new THREE.Vector3(1.0, 0.96, 0.92) },
+      uSkyAmbient:          { value: new THREE.Vector3(0.55, 0.62, 0.78) },
+      uGroundAmbient:       { value: new THREE.Vector3(0.18, 0.22, 0.14) },
+      uSunStrength:         { value: 0.60 },
       uElevMin:           { value: opts.elevMin   ?? 220.0 },
       uElevRange:         { value: opts.elevRange ?? 70.0  },
     },
@@ -182,14 +190,21 @@ export function applyThemeToMaterial(
   u.uUseHighwayPalette!.value = theme.useHighwayPalette
   u.uRoadPalette!.value = getSharedRoadPalette()
 
-  const ambient = theme.ambientIntensity
-  const sun = theme.sunIntensity
-  u.uAmbient!.value = ambient
-  u.uSunStrength!.value = sun
+  u.uSunStrength!.value = theme.sunIntensity
+  u.uSunColor!.value.set(...hexToVec3(theme.sunColor))
 
   if (sunDir) {
     u.uSunDirection!.value.copy(sunDir)
   }
+}
+
+export function applyTerrainAmbientToMaterial(
+  mat: THREE.ShaderMaterial,
+  skyAmbient: THREE.Vector3,
+  groundAmbient: THREE.Vector3,
+): void {
+  mat.uniforms.uSkyAmbient!.value.copy(skyAmbient)
+  mat.uniforms.uGroundAmbient!.value.copy(groundAmbient)
 }
 
 export function updateSdfTexture(
