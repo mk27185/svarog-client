@@ -32,7 +32,7 @@ function sunDirectionFromTheme(theme: TileViewerTheme, out: THREE.Vector3): THRE
 export function createWorldEnvironment(scene: THREE.Scene): WorldEnvironment {
   const fogColor = new THREE.Color(0xefd1b5)
   scene.background = fogColor.clone()
-  scene.fog = new THREE.FogExp2(fogColor.getHex(), 0.0015)
+  scene.fog = new THREE.FogExp2(fogColor.getHex(), 0.00115)
 
   const ambient = new THREE.AmbientLight(0xefd1b5, 1.0)
   scene.add(ambient)
@@ -94,7 +94,11 @@ export function getTerrainAmbientColors(
   groundOut: THREE.Vector3,
 ): void {
   const [r, g, b] = hexToVec3(theme.fog)
-  const lift = theme.ambientIntensity * 0.45
-  skyOut.set(r + lift, g + lift, b + lift * 0.85)
-  groundOut.set(r * 0.72, g * 0.68, b * 0.62)
+  const lift = theme.ambientIntensity * 0.08
+  skyOut.set(
+    Math.min(r + lift, 0.82),
+    Math.min(g + lift, 0.76),
+    Math.min(b + lift * 0.9, 0.68),
+  )
+  groundOut.set(r * 0.42, g * 0.38, b * 0.34)
 }

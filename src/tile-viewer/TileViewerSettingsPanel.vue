@@ -52,6 +52,16 @@ const fogDensityUi = computed({
   set: (ui) => patch('fogDensity', ui / 100_000),
 })
 
+const sdfOpacityUi = computed({
+  get: () => Math.round(theme.value.sdfOverlayOpacity * 100),
+  set: (ui) => patch('sdfOverlayOpacity', ui / 100),
+})
+
+function onSdfOpacityUi(e: Event) {
+  const v = parseFloat((e.target as HTMLInputElement).value)
+  if (!Number.isNaN(v)) sdfOpacityUi.value = v
+}
+
 function onFogDensityUi(e: Event) {
   const v = parseFloat((e.target as HTMLInputElement).value)
   if (!Number.isNaN(v)) fogDensityUi.value = v
@@ -59,6 +69,14 @@ function onFogDensityUi(e: Event) {
 
 function onReset() {
   resetTheme()
+}
+
+/** Dump panel theme for sharing / new defaults (DevTools → Console). */
+function logSettingsToConsole() {
+  const t = getTheme()
+  const payload = JSON.stringify(t, null, 2)
+  console.log('%c[Svarog TileViewer] theme — zkopíruj JSON níže pro nové defaulty', 'font-weight:bold;color:#b45309')
+  console.log(payload)
 }
 
 const stopLabels = [
@@ -88,7 +106,7 @@ const stopLabels = [
       </label>
       <label class="row">
         <span>Síla oparu ({{ fogDensityUi }})</span>
-        <input type="range" min="40" max="220" step="5" :value="fogDensityUi" @input="onFogDensityUi" />
+        <input type="range" min="50" max="180" step="5" :value="fogDensityUi" @input="onFogDensityUi" />
       </label>
       <label class="row">
         <span>Jas scény</span>
@@ -118,6 +136,10 @@ const stopLabels = [
 
     <section>
       <SdText as="h3" size="sm" weight="semibold">Silnice</SdText>
+      <label class="row">
+        <span>Průhlednost SDF ({{ sdfOpacityUi }} %)</span>
+        <input type="range" min="0" max="100" step="5" :value="sdfOpacityUi" @input="onSdfOpacityUi" />
+      </label>
       <label class="row toggle-row">
         <span>Paleta podle typu (SDF kanál G)</span>
         <SdToggle
@@ -205,6 +227,9 @@ const stopLabels = [
     </section>
 
     <div class="footer-actions">
+      <SdButton variant="secondary" size="sm" @click="logSettingsToConsole">
+        Vypsat nastavení do konzole
+      </SdButton>
       <SdButton variant="secondary" size="sm" @click="onReset">Obnovit vše (nový vzhled)</SdButton>
     </div>
   </div>
@@ -266,6 +291,9 @@ section {
 }
 
 .footer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   padding-top: 0.5rem;
 }
 </style>

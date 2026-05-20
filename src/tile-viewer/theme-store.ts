@@ -5,6 +5,8 @@ import {
   applyTerrainAmbientToMaterial,
   applyThemeToMaterial,
   ensureTerrainShaderUniforms,
+  syncCameraUniform,
+  syncFogUniforms,
   syncSunUniform,
 } from './sdf-material'
 import type { WorldEnvironment } from './world-environment'
@@ -98,11 +100,16 @@ export function resetTheme(): TileViewerTheme {
 const _skyAmb = new THREE.Vector3()
 const _groundAmb = new THREE.Vector3()
 
-export function syncSunOnAllMaterials(sun: THREE.DirectionalLight, env?: WorldEnvironment): void {
+export function syncSunOnAllMaterials(
+  sun: THREE.DirectionalLight,
+  env?: WorldEnvironment,
+  camera?: THREE.Camera,
+): void {
   if (env) {
     getTerrainAmbientColors(env, currentTheme, _skyAmb, _groundAmb)
   }
   for (const mat of terrainMaterials) {
+    if (camera) syncCameraUniform(mat, camera)
     syncSunUniform(mat, sun)
     if (env) applyTerrainAmbientToMaterial(mat, _skyAmb, _groundAmb)
   }
@@ -128,5 +135,19 @@ export function applyThemeToScene(targets: SceneThemeTargets, theme: TileViewerT
   getTerrainAmbientColors(env, synced, _skyAmb, _groundAmb)
   syncSunOnAllMaterials(env.sun, env)
   renderer.toneMappingExposure = synced.exposure
+}
+
+export function syncTerrainMaterials(
+  sun: THREE.DirectionalLight,
+  env: WorldEnvironment,
+  camera: THREE.Camera,
+  sceneFog?: THREE.Fog | THREE.FogExp2 | null,
+): void {
+  syncSunOnAllMaterials(sun, env, camera)
+  if (sceneFog instanceof THREE.FogExp2) {
+    for (const mat of terrainMaterials) {
+      syncFogUniforms(mat, sceneFog)
+    }
+  }
 }
 

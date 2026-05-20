@@ -21,6 +21,8 @@ export interface TileViewerTheme {
   green: string
   rail: string
   useHighwayPalette: boolean
+  /** 0–1 blend strength for SDF roads + landcover overlay textures. */
+  sdfOverlayOpacity: number
   highwayStops: HighwayColorStop[]
   building: string
   showNavmeshDebug: boolean
@@ -48,26 +50,27 @@ export interface TileViewerTheme {
 }
 
 export const DEFAULT_HIGHWAY_STOPS: HighwayColorStop[] = [
-  { t: 0.10, color: '#7a6c5e' },
-  { t: 0.30, color: '#8a7c6e' },
-  { t: 0.40, color: '#847a6e' },
-  { t: 0.55, color: '#7e7468' },
-  { t: 0.65, color: '#786e62' },
-  { t: 0.72, color: '#72685c' },
-  { t: 0.88, color: '#a89888' },
-  { t: 1.00, color: '#c4b4a4' },
+  { t: 0.10, color: '#5c4e42' },
+  { t: 0.30, color: '#6a5c4e' },
+  { t: 0.40, color: '#645a4e' },
+  { t: 0.55, color: '#5e5448' },
+  { t: 0.65, color: '#584e42' },
+  { t: 0.72, color: '#52483c' },
+  { t: 0.88, color: '#8a7c6a' },
+  { t: 1.00, color: '#a89880' },
 ]
 
 export const DEFAULT_TILE_VIEWER_THEME: TileViewerTheme = {
-  terrainLow:  '#8f5e42',
+  terrainLow:  '#c1ac8f',
   terrainHigh: '#c9a87a',
-  roadDark:    '#6e5c4e',
-  roadLight:   '#a0907e',
-  water:       '#9aa89c',
-  river:       '#8e9a92',
-  green:       '#9a8f72',
-  rail:        '#6a5e54',
-  useHighwayPalette: false,
+  roadDark:    '#4a3828',
+  roadLight:   '#7a6a58',
+  water:       '#6a7e88',
+  river:       '#5e7278',
+  green:       '#6e6848',
+  rail:        '#52483c',
+  useHighwayPalette: true,
+  sdfOverlayOpacity: 0.3,
   showNavmeshDebug: false,
   highwayStops: DEFAULT_HIGHWAY_STOPS.map((s) => ({ ...s })),
   building:    '#847566',
@@ -75,7 +78,7 @@ export const DEFAULT_TILE_VIEWER_THEME: TileViewerTheme = {
   fog:         DEFAULT_ATMOSPHERE,
   fogNear:     2000,
   fogFar:      4500,
-  fogDensity:  0.0015,
+  fogDensity:  0.00115,
   turbidity:   2,
   rayleigh:    1.5,
   cloudCoverage: 0,
@@ -88,9 +91,9 @@ export const DEFAULT_TILE_VIEWER_THEME: TileViewerTheme = {
   sunIntensity:     0.28,
   sunColor:         '#fff8f0',
   exposure:    1.0,
-  saturation:  0.88,
-  contrast:    0.92,
-  vignette:    0.08,
+  saturation:  0.65,
+  contrast:    0.98,
+  vignette:    0.7,
 }
 
 const STORAGE_KEY = 'svarog.tileViewer.theme'
@@ -127,7 +130,7 @@ export function saveThemeToStorage(theme: TileViewerTheme): void {
 }
 
 const NUMERIC_THEME_KEYS: (keyof TileViewerTheme)[] = [
-  'fogNear', 'fogFar', 'fogDensity', 'turbidity', 'rayleigh', 'cloudCoverage', 'cloudBrightness',
+  'fogNear', 'fogFar', 'fogDensity', 'sdfOverlayOpacity', 'turbidity', 'rayleigh', 'cloudCoverage', 'cloudBrightness',
   'sunElevation', 'sunAzimuth', 'skyAmbientScale', 'groundAmbientScale',
   'ambientIntensity', 'sunIntensity', 'exposure', 'saturation', 'contrast', 'vignette',
 ]

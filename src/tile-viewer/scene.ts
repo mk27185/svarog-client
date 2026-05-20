@@ -41,7 +41,7 @@ import {
   setGlobalElevation,
   setTheme as applyStoredTheme,
   subscribeTheme,
-  syncSunOnAllMaterials,
+  syncTerrainMaterials,
   unregisterTerrainMaterial,
   type SceneThemeTargets,
 } from './theme-store'
@@ -280,7 +280,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   function applyFullTheme(theme: TileViewerTheme): void {
     applyThemeToScene(sceneTargets, theme)
     colorGrade.applyTheme(theme)
-    syncSunOnAllMaterials(env.sun, env)
+    syncTerrainMaterials(env.sun, env, camera, scene.fog)
   }
 
   const unregSceneTheme = registerSceneThemeApply(applyFullTheme)
@@ -453,7 +453,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
 
     cameraController.update()
     env.update(playerTarget)
-    syncSunOnAllMaterials(env.sun, env)
+    syncTerrainMaterials(env.sun, env, camera, scene.fog)
     composer.render()
   }
   animate()
