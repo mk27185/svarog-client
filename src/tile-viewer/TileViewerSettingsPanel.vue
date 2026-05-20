@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { SdToggle, SdButton, SdText, SdDivider } from 'svarog-design'
 import type { TileViewerTheme, HighwayColorStop } from './theme'
-import { DEFAULT_HIGHWAY_STOPS } from './theme'
+import { DEFAULT_ATMOSPHERE, DEFAULT_HIGHWAY_STOPS } from './theme'
 import { getTheme, setTheme, resetTheme, subscribeTheme } from './theme-store'
 
 const theme = ref<TileViewerTheme>(structuredClone(getTheme()) as TileViewerTheme)
@@ -24,10 +24,15 @@ function patch<K extends keyof TileViewerTheme>(key: K, value: TileViewerTheme[K
 }
 
 function onColor(
-  key: 'terrainLow' | 'terrainHigh' | 'roadDark' | 'roadLight' | 'water' | 'river' | 'green' | 'rail' | 'building' | 'sky' | 'fog' | 'sunColor',
+  key: 'terrainLow' | 'terrainHigh' | 'roadDark' | 'roadLight' | 'water' | 'river' | 'green' | 'rail' | 'building' | 'fog' | 'sunColor',
   e: Event,
 ) {
-  patch(key, (e.target as HTMLInputElement).value)
+  const v = (e.target as HTMLInputElement).value
+  if (key === 'fog') {
+    setTheme({ fog: v, sky: v })
+    return
+  }
+  patch(key, v)
 }
 
 function onStopColor(index: number, e: Event) {
@@ -42,8 +47,36 @@ function onNumber(key: keyof TileViewerTheme, e: Event) {
   if (!Number.isNaN(v)) patch(key, v as TileViewerTheme[typeof key])
 }
 
+const fogDensityUi = computed({
+  get: () => Math.round(theme.value.fogDensity * 100_000),
+  set: (ui) => patch('fogDensity', ui / 100_000),
+})
+
+const sdfOpacityUi = computed({
+  get: () => Math.round(theme.value.sdfOverlayOpacity * 100),
+  set: (ui) => patch('sdfOverlayOpacity', ui / 100),
+})
+
+function onSdfOpacityUi(e: Event) {
+  const v = parseFloat((e.target as HTMLInputElement).value)
+  if (!Number.isNaN(v)) sdfOpacityUi.value = v
+}
+
+function onFogDensityUi(e: Event) {
+  const v = parseFloat((e.target as HTMLInputElement).value)
+  if (!Number.isNaN(v)) fogDensityUi.value = v
+}
+
 function onReset() {
   resetTheme()
+}
+
+/** Dump panel theme for sharing / new defaults (DevTools → Console). */
+function logSettingsToConsole() {
+  const t = getTheme()
+  const payload = JSON.stringify(t, null, 2)
+  console.log('%c[Svarog TileViewer] theme — zkopíruj JSON níže pro nové defaulty', 'font-weight:bold;color:#b45309')
+  console.log(payload)
 }
 
 const stopLabels = [
@@ -60,14 +93,41 @@ const stopLabels = [
 
 <template>
   <div class="settings">
+    <p class="intro">
+      Vizuál jako three.js terrain demo: jedna barva oblohy a mlhy, krajina v dálce mizí v oparu.
+      Výchozí tón „Shangri-La“ {{ DEFAULT_ATMOSPHERE }}.
+    </p>
+
+    <section>
+      <SdText as="h3" size="sm" weight="semibold">Atmosféra</SdText>
+      <label class="row">
+        <span>Obloha + mlha</span>
+        <input type="color" :value="theme.fog" @input="onColor('fog', $event)" />
+      </label>
+      <label class="row">
+        <span>Síla oparu ({{ fogDensityUi }})</span>
+        <input type="range" min="50" max="180" step="5" :value="fogDensityUi" @input="onFogDensityUi" />
+      </label>
+      <label class="row">
+        <span>Jas scény</span>
+        <input type="range" min="0.5" max="2" step="0.05" :value="theme.ambientIntensity" @input="onNumber('ambientIntensity', $event)" />
+      </label>
+      <label class="row">
+        <span>Slunce (jemné stíny)</span>
+        <input type="range" min="0" max="1" step="0.05" :value="theme.sunIntensity" @input="onNumber('sunIntensity', $event)" />
+      </label>
+    </section>
+
+    <SdDivider />
+
     <section>
       <SdText as="h3" size="sm" weight="semibold">Terén</SdText>
       <label class="row">
-        <span>Nížiny</span>
+        <span>Úpatí / stín</span>
         <input type="color" :value="theme.terrainLow" @input="onColor('terrainLow', $event)" />
       </label>
       <label class="row">
-        <span>Výšiny</span>
+        <span>Kopce / světlo</span>
         <input type="color" :value="theme.terrainHigh" @input="onColor('terrainHigh', $event)" />
       </label>
     </section>
@@ -76,6 +136,10 @@ const stopLabels = [
 
     <section>
       <SdText as="h3" size="sm" weight="semibold">Silnice</SdText>
+      <label class="row">
+        <span>Průhlednost SDF ({{ sdfOpacityUi }} %)</span>
+        <input type="range" min="0" max="100" step="5" :value="sdfOpacityUi" @input="onSdfOpacityUi" />
+      </label>
       <label class="row toggle-row">
         <span>Paleta podle typu (SDF kanál G)</span>
         <SdToggle
@@ -85,21 +149,17 @@ const stopLabels = [
       </label>
       <template v-if="!theme.useHighwayPalette">
         <label class="row">
-          <span>Tmavá</span>
+          <span>Tmavší</span>
           <input type="color" :value="theme.roadDark" @input="onColor('roadDark', $event)" />
         </label>
         <label class="row">
-          <span>Světlá</span>
+          <span>Světlejší</span>
           <input type="color" :value="theme.roadLight" @input="onColor('roadLight', $event)" />
         </label>
       </template>
       <template v-else>
-        <p class="hint">Barvy podle importance z SDF (0 = chodník … 1 = dálnice).</p>
-        <label
-          v-for="(stop, i) in theme.highwayStops"
-          :key="i"
-          class="row"
-        >
+        <p class="hint">Odstíny ve stejném tónu jako terén.</p>
+        <label v-for="(stop, i) in theme.highwayStops" :key="i" class="row">
           <span>{{ stopLabels[i] ?? `Stupeň ${i + 1}` }}</span>
           <input type="color" :value="stop.color" @input="onStopColor(i, $event)" />
         </label>
@@ -112,83 +172,26 @@ const stopLabels = [
     <SdDivider />
 
     <section>
-      <SdText as="h3" size="sm" weight="semibold">Voda a zeleň</SdText>
+      <SdText as="h3" size="sm" weight="semibold">Voda, zeleň, budovy</SdText>
       <label class="row">
-        <span>Vodní plochy</span>
+        <span>Voda</span>
         <input type="color" :value="theme.water" @input="onColor('water', $event)" />
       </label>
       <label class="row">
-        <span>Řeky a potoky</span>
+        <span>Řeky</span>
         <input type="color" :value="theme.river" @input="onColor('river', $event)" />
       </label>
       <label class="row">
-        <span>Zeleň a parky</span>
+        <span>Zeleň</span>
         <input type="color" :value="theme.green" @input="onColor('green', $event)" />
       </label>
       <label class="row">
         <span>Železnice</span>
         <input type="color" :value="theme.rail" @input="onColor('rail', $event)" />
       </label>
-    </section>
-
-    <SdDivider />
-
-    <section>
-      <SdText as="h3" size="sm" weight="semibold">Budovy a atmosféra</SdText>
       <label class="row">
         <span>Budovy</span>
         <input type="color" :value="theme.building" @input="onColor('building', $event)" />
-      </label>
-      <label class="row">
-        <span>Obloha</span>
-        <input type="color" :value="theme.sky" @input="onColor('sky', $event)" />
-      </label>
-      <label class="row">
-        <span>Mlha</span>
-        <input type="color" :value="theme.fog" @input="onColor('fog', $event)" />
-      </label>
-      <label class="row">
-        <span>Mlha — začátek (m)</span>
-        <input type="range" min="500" max="4000" step="50" :value="theme.fogNear" @input="onNumber('fogNear', $event)" />
-      </label>
-      <label class="row">
-        <span>Mlha — konec (m)</span>
-        <input type="range" min="2000" max="8000" step="100" :value="theme.fogFar" @input="onNumber('fogFar', $event)" />
-      </label>
-    </section>
-
-    <SdDivider />
-
-    <section>
-      <SdText as="h3" size="sm" weight="semibold">Osvětlení</SdText>
-      <label class="row">
-        <span>Ambient</span>
-        <input type="range" min="0" max="1.5" step="0.05" :value="theme.ambientIntensity" @input="onNumber('ambientIntensity', $event)" />
-      </label>
-      <label class="row">
-        <span>Slunce — intenzita</span>
-        <input type="range" min="0" max="3" step="0.1" :value="theme.sunIntensity" @input="onNumber('sunIntensity', $event)" />
-      </label>
-      <label class="row">
-        <span>Slunce — barva</span>
-        <input type="color" :value="theme.sunColor" @input="onColor('sunColor', $event)" />
-      </label>
-      <label class="row">
-        <span>Exposure (tone mapping)</span>
-        <input type="range" min="0.3" max="2.5" step="0.05" :value="theme.exposure" @input="onNumber('exposure', $event)" />
-      </label>
-    </section>
-
-    <SdDivider />
-
-    <section>
-      <SdText as="h3" size="sm" weight="semibold">Navigace (debug)</SdText>
-      <label class="row toggle-row">
-        <span>Zobrazit navmesh (drátěný model)</span>
-        <SdToggle
-          :model-value="theme.showNavmeshDebug"
-          @update:model-value="patch('showNavmeshDebug', $event)"
-        />
       </label>
     </section>
 
@@ -210,8 +213,24 @@ const stopLabels = [
       </label>
     </section>
 
+    <SdDivider />
+
+    <section>
+      <SdText as="h3" size="sm" weight="semibold">Navigace (debug)</SdText>
+      <label class="row toggle-row">
+        <span>Zobrazit navmesh</span>
+        <SdToggle
+          :model-value="theme.showNavmeshDebug"
+          @update:model-value="patch('showNavmeshDebug', $event)"
+        />
+      </label>
+    </section>
+
     <div class="footer-actions">
-      <SdButton variant="secondary" size="sm" @click="onReset">Obnovit vše</SdButton>
+      <SdButton variant="secondary" size="sm" @click="logSettingsToConsole">
+        Vypsat nastavení do konzole
+      </SdButton>
+      <SdButton variant="secondary" size="sm" @click="onReset">Obnovit vše (nový vzhled)</SdButton>
     </div>
   </div>
 </template>
@@ -221,6 +240,13 @@ const stopLabels = [
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.intro {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.4;
 }
 
 section {
@@ -265,6 +291,9 @@ section {
 }
 
 .footer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   padding-top: 0.5rem;
 }
 </style>

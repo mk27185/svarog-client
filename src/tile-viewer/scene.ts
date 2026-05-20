@@ -35,15 +35,18 @@ import { tilesetUrl, tileAssetsPathPrefix } from './tiles-config'
 import type { TileViewerTheme } from './theme'
 import {
   applyThemeToScene,
+  bindWorldEnvironment,
   getTheme,
+  registerSceneThemeApply,
   setGlobalElevation,
   setTheme as applyStoredTheme,
   subscribeTheme,
-  syncSunOnAllMaterials,
+  syncTerrainMaterials,
   unregisterTerrainMaterial,
   type SceneThemeTargets,
 } from './theme-store'
 import { createPostProcessing, resizeComposer } from './post-processing'
+import { createWorldEnvironment } from './world-environment'
 import {
   createTerrainHeightSampler,
   MARKER_CENTER_ABOVE_TERRAIN,
@@ -101,30 +104,22 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false)
-  renderer.shadowMap.enabled   = true
-  renderer.shadowMap.type      = THREE.PCFSoftShadowMap
-  renderer.toneMapping         = THREE.ACESFilmicToneMapping
+  renderer.shadowMap.enabled   = false
+  renderer.toneMapping         = THREE.NoToneMapping
   renderer.toneMappingExposure = 1.0
 
   // ── scene ──────────────────────────────────────────────────────────────────
   const scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x7faed0)
-  scene.fog        = new THREE.Fog(0x7faed0, 2000, 4500)
 
-  // ── lights ─────────────────────────────────────────────────────────────────
-  const ambient = new THREE.AmbientLight(0xfff4e8, 0.55)
-  scene.add(ambient)
-  const sun = new THREE.DirectionalLight(0xfff8f0, 1.5)
-  sun.position.set(600, 900, 400)
-  sun.target.position.set(0, 0, 0)
-  sun.castShadow = true
-  sun.shadow.mapSize.set(2048, 2048)
-  const r = 1400
-  Object.assign(sun.shadow.camera, { near: 1, far: 5000, left: -r, right: r, bottom: -r, top: r })
-  scene.add(sun.target)
-  scene.add(sun)
+  const camCfg = gameRuntime.camera
+  const camera = new THREE.PerspectiveCamera(
+    camCfg.fov, canvas.clientWidth / canvas.clientHeight, 1, 25_000,
+  )
 
-  const sceneTargets: SceneThemeTargets = { scene, ambient, sun, renderer }
+  const env = createWorldEnvironment(scene)
+  bindWorldEnvironment(env)
+
+  const sceneTargets: SceneThemeTargets = { scene, env, renderer }
 
   // ── fetch tileset.json ─────────────────────────────────────────────────────
   const assetsPrefix = tileAssetsPathPrefix()
@@ -162,15 +157,9 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
     () => globalElevMax + 500,
   )
 
-  const camCfg = gameRuntime.camera
   const playerTarget = new THREE.Vector3(0, fallbackElevY, 0)
 
   const positionKalman = createGpsKalmanFilter(gameRuntime.gps.kalman)
-
-  // ── camera ─────────────────────────────────────────────────────────────────
-  const camera = new THREE.PerspectiveCamera(
-    camCfg.fov, canvas.clientWidth / canvas.clientHeight, 1, 12000,
-  )
 
   const cameraController = createThirdPersonCamera(
     camera,
@@ -291,12 +280,11 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   function applyFullTheme(theme: TileViewerTheme): void {
     applyThemeToScene(sceneTargets, theme)
     colorGrade.applyTheme(theme)
-    syncSunOnAllMaterials(sun)
+    syncTerrainMaterials(env.sun, env, camera, scene.fog)
   }
 
-  applyFullTheme(getTheme())
+  const unregSceneTheme = registerSceneThemeApply(applyFullTheme)
   const unsubTheme = subscribeTheme((theme) => {
-    applyFullTheme(theme)
     applyNavmeshDebugToAllTiles(theme.showNavmeshDebug)
   })
 
@@ -464,7 +452,8 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
     }
 
     cameraController.update()
-    syncSunOnAllMaterials(sun)
+    env.update(playerTarget)
+    syncTerrainMaterials(env.sun, env, camera, scene.fog)
     composer.render()
   }
   animate()
@@ -495,12 +484,14 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
       if (tileLoadTimer !== null) clearTimeout(tileLoadTimer)
       ro.disconnect()
       unsubTheme()
+      unregSceneTheme()
       composer.dispose()
       cameraController.dispose()
       for (const key of [...liveTiles.keys()]) unloadTile(key)
       scene.remove(userMarker)
       markerGeom.dispose()
       markerMat.dispose()
+      env.dispose()
       renderer.dispose()
     },
   }

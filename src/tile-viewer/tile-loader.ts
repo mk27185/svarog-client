@@ -134,7 +134,7 @@ export async function loadTile(
   }
 
   let sdfTex = extractEmbeddedSdfTexture(terrainNode)
-  if (!sdfTex && extras?.sdf_embedded && extras.texture_roads != null) {
+  if (!sdfTex && extras?.texture_roads != null) {
     sdfTex = await resolveGltfTexture(gltf, extras.texture_roads)
   }
 
@@ -148,6 +148,8 @@ export async function loadTile(
     landcoverTexture: landcoverTex ?? undefined,
     elevMin,
     elevRange,
+    expectSdf: hasSdf,
+    expectLandcover: hasLandcover,
   })
   const buildingMat = getBuildingMaterial()
 
