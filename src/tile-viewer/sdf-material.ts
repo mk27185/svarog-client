@@ -20,6 +20,7 @@ const VERT = /* glsl */`
   out vec2  vSdfUv;
   out vec3  vWorldNormal;
   out float vElevNorm;
+  out float vFogDepth;
 
   uniform float uElevMin;
   uniform float uElevRange;
@@ -28,7 +29,9 @@ const VERT = /* glsl */`
     vSdfUv = uv;
     vElevNorm = clamp((position.z - uElevMin) / max(uElevRange, 1.0), 0.0, 1.0);
     vWorldNormal = normalize(mat3(modelMatrix) * normal);
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+    vFogDepth = -mvPos.z;
+    gl_Position = projectionMatrix * mvPos;
   }
 `
 
@@ -56,10 +59,13 @@ const FRAG = /* glsl */`
   uniform vec3  uSkyAmbient;
   uniform vec3  uGroundAmbient;
   uniform float uSunStrength;
+  uniform vec3  uFogColor;
+  uniform float uFogDensity;
 
   in vec2  vSdfUv;
   in vec3  vWorldNormal;
   in float vElevNorm;
+  in float vFogDepth;
 
   out vec4 fragColor;
 
@@ -74,6 +80,12 @@ const FRAG = /* glsl */`
     float ndl = max(0.0, dot(N, uSunDirection));
     vec3 direct = uSunColor * (uSunStrength * ndl);
     return ambient + direct;
+  }
+
+  vec3 applyFog(vec3 color, float depth) {
+    float d = uFogDensity * depth;
+    float fogFactor = 1.0 - exp(-d * d);
+    return mix(color, uFogColor, clamp(fogFactor, 0.0, 1.0));
   }
 
   void main() {
@@ -124,6 +136,7 @@ const FRAG = /* glsl */`
       }
     }
 
+    tColor = applyFog(tColor, vFogDepth);
     fragColor = vec4(tColor, 1.0);
   }
 `
@@ -133,6 +146,19 @@ export interface SdfMaterialOptions {
   landcoverTexture?: THREE.Texture
   elevMin?:    number
   elevRange?:  number
+}
+
+/** Backfill uniforms when HMR or cached materials predate shader changes. */
+export function ensureTerrainShaderUniforms(mat: THREE.ShaderMaterial): void {
+  const u = mat.uniforms
+  if (!u.uSunDirection) u.uSunDirection = { value: new THREE.Vector3(0.6, 1, 0.5).normalize() }
+  if (!u.uSunColor) u.uSunColor = { value: new THREE.Vector3(1, 0.96, 0.92) }
+  if (!u.uSkyAmbient) u.uSkyAmbient = { value: new THREE.Vector3(0.94, 0.82, 0.71) }
+  if (!u.uGroundAmbient) u.uGroundAmbient = { value: new THREE.Vector3(0.5, 0.45, 0.38) }
+  if (!u.uSunStrength) u.uSunStrength = { value: 0.3 }
+  if (!u.uFogColor) u.uFogColor = { value: new THREE.Vector3(0.94, 0.82, 0.71) }
+  if (!u.uFogDensity) u.uFogDensity = { value: 0.0015 }
+  if (!u.uRoadPalette) u.uRoadPalette = { value: getSharedRoadPalette() }
 }
 
 export function createSdfMaterial(opts: SdfMaterialOptions = {}): THREE.ShaderMaterial {
@@ -162,10 +188,13 @@ export function createSdfMaterial(opts: SdfMaterialOptions = {}): THREE.ShaderMa
       uSkyAmbient:          { value: new THREE.Vector3(0.55, 0.62, 0.78) },
       uGroundAmbient:       { value: new THREE.Vector3(0.18, 0.22, 0.14) },
       uSunStrength:         { value: 0.60 },
+      uFogColor:            { value: new THREE.Vector3(0.94, 0.82, 0.71) },
+      uFogDensity:          { value: 0.0015 },
       uElevMin:           { value: opts.elevMin   ?? 220.0 },
       uElevRange:         { value: opts.elevRange ?? 70.0  },
     },
     side:        THREE.DoubleSide,
+    fog:         false,
     glslVersion: THREE.GLSL3,
   })
 
@@ -178,6 +207,7 @@ export function applyThemeToMaterial(
   theme: TileViewerTheme,
   sunDir?: THREE.Vector3,
 ): void {
+  ensureTerrainShaderUniforms(mat)
   const u = mat.uniforms
   u.uTerrainLow!.value.set(...hexToVec3(theme.terrainLow))
   u.uTerrainHigh!.value.set(...hexToVec3(theme.terrainHigh))
@@ -196,6 +226,9 @@ export function applyThemeToMaterial(
   if (sunDir) {
     u.uSunDirection!.value.copy(sunDir)
   }
+
+  if (u.uFogColor) u.uFogColor.value.set(...hexToVec3(theme.fog))
+  if (u.uFogDensity) u.uFogDensity.value = theme.fogDensity
 }
 
 export function applyTerrainAmbientToMaterial(
@@ -203,8 +236,9 @@ export function applyTerrainAmbientToMaterial(
   skyAmbient: THREE.Vector3,
   groundAmbient: THREE.Vector3,
 ): void {
-  mat.uniforms.uSkyAmbient!.value.copy(skyAmbient)
-  mat.uniforms.uGroundAmbient!.value.copy(groundAmbient)
+  ensureTerrainShaderUniforms(mat)
+  mat.uniforms.uSkyAmbient?.value.copy(skyAmbient)
+  mat.uniforms.uGroundAmbient?.value.copy(groundAmbient)
 }
 
 export function updateSdfTexture(
@@ -229,9 +263,12 @@ export function syncSunUniform(
   mat: THREE.ShaderMaterial,
   sun: THREE.DirectionalLight,
 ): void {
+  ensureTerrainShaderUniforms(mat)
+  const dir = mat.uniforms.uSunDirection?.value as THREE.Vector3 | undefined
+  if (!dir) return
   const target = new THREE.Vector3()
   sun.target.getWorldPosition(target)
   const pos = new THREE.Vector3()
   sun.getWorldPosition(pos)
-  mat.uniforms.uSunDirection!.value.subVectors(pos, target).normalize()
+  dir.subVectors(pos, target).normalize()
 }

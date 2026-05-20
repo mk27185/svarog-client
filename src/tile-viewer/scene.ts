@@ -104,10 +104,9 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false)
-  renderer.shadowMap.enabled   = true
-  renderer.shadowMap.type      = THREE.PCFSoftShadowMap
-  renderer.toneMapping         = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 0.95
+  renderer.shadowMap.enabled   = false
+  renderer.toneMapping         = THREE.NoToneMapping
+  renderer.toneMappingExposure = 1.0
 
   // ── scene ──────────────────────────────────────────────────────────────────
   const scene = new THREE.Scene()
@@ -117,7 +116,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
     camCfg.fov, canvas.clientWidth / canvas.clientHeight, 1, 25_000,
   )
 
-  const env = createWorldEnvironment(scene, camera.far)
+  const env = createWorldEnvironment(scene)
   bindWorldEnvironment(env)
 
   const sceneTargets: SceneThemeTargets = { scene, env, renderer }
@@ -453,7 +452,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
     }
 
     cameraController.update()
-    env.update(camera, playerTarget, dt)
+    env.update(playerTarget)
     syncSunOnAllMaterials(env.sun, env)
     composer.render()
   }

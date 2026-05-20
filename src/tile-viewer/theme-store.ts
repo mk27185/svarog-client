@@ -1,7 +1,12 @@
 import * as THREE from 'three'
 import type { TileViewerTheme } from './theme'
 import { loadThemeFromStorage, mergeTheme, saveThemeToStorage } from './theme'
-import { applyTerrainAmbientToMaterial, applyThemeToMaterial, syncSunUniform } from './sdf-material'
+import {
+  applyTerrainAmbientToMaterial,
+  applyThemeToMaterial,
+  ensureTerrainShaderUniforms,
+  syncSunUniform,
+} from './sdf-material'
 import type { WorldEnvironment } from './world-environment'
 import { getTerrainAmbientColors } from './world-environment'
 import { getBuildingMaterial } from './shared-materials'
@@ -36,6 +41,7 @@ export function getTheme(): Readonly<TileViewerTheme> {
 }
 
 export function registerTerrainMaterial(mat: THREE.ShaderMaterial): void {
+  ensureTerrainShaderUniforms(mat)
   terrainMaterials.add(mat)
   applyThemeToMaterial(mat, currentTheme)
   if (worldEnv) syncSunOnAllMaterials(worldEnv.sun, worldEnv)
@@ -117,9 +123,10 @@ export interface SceneThemeTargets {
 export function applyThemeToScene(targets: SceneThemeTargets, theme: TileViewerTheme): void {
   const { env, renderer } = targets
 
-  env.applyTheme(theme)
+  const synced = mergeTheme({ ...theme, sky: theme.fog })
+  env.applyTheme(synced)
+  getTerrainAmbientColors(env, synced, _skyAmb, _groundAmb)
   syncSunOnAllMaterials(env.sun, env)
-
-  renderer.toneMappingExposure = theme.exposure
+  renderer.toneMappingExposure = synced.exposure
 }
 
