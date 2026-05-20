@@ -44,6 +44,11 @@ import {
   type SceneThemeTargets,
 } from './theme-store'
 import { createPostProcessing, resizeComposer } from './post-processing'
+import {
+  createTerrainHeightSampler,
+  MARKER_CENTER_ABOVE_TERRAIN,
+  PLAYER_HEIGHT_ABOVE_TERRAIN,
+} from './terrain-height'
 
 // ── Tileset descriptor (TileJSON 3.0.0 + svarog extras) ───────────────────────
 
@@ -149,10 +154,16 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   // Initialised from the tileset global elev_min; updated dynamically after the
   // first tile loads so the camera sits on the actual local terrain, not the
   // dataset-wide minimum (which can be 50–100 m below the user's location).
-  let ELEV_Y = tileset.extras?.elev_min ?? 220
+  /** Fallback Y when terrain tiles are not loaded yet (dataset-wide minimum). */
+  let fallbackElevY = tileset.extras?.elev_min ?? 220
+
+  const terrainHeight = createTerrainHeightSampler(
+    () => liveTiles.values(),
+    () => globalElevMax + 500,
+  )
 
   const camCfg = gameRuntime.camera
-  const playerTarget = new THREE.Vector3(0, ELEV_Y, 0)
+  const playerTarget = new THREE.Vector3(0, fallbackElevY, 0)
 
   const positionKalman = createGpsKalmanFilter(gameRuntime.gps.kalman)
 
@@ -268,6 +279,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
       }
     })
     liveTiles.delete(key)
+    terrainHeight.invalidateCache()
   }
 
   function applyNavmeshDebugToAllTiles(visible: boolean): void {
@@ -326,10 +338,16 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
     }
   }
 
+  function terrainYAt(offsetX: number, offsetZ: number): number {
+    const sampled = terrainHeight.sampleTerrainY(offsetX, offsetZ)
+    return sampled ?? fallbackElevY
+  }
+
   function syncPlayerWorldPosition(offsetX: number, offsetZ: number) {
-    playerTarget.set(offsetX, ELEV_Y, offsetZ)
+    const surfaceY = terrainYAt(offsetX, offsetZ)
+    playerTarget.set(offsetX, surfaceY + PLAYER_HEIGHT_ABOVE_TERRAIN, offsetZ)
     cameraController.setTarget(playerTarget)
-    userMarker.position.set(offsetX, ELEV_Y + 16, offsetZ)
+    userMarker.position.set(offsetX, surfaceY + MARKER_CENTER_ABOVE_TERRAIN, offsetZ)
     userMarker.visible = true
   }
 
@@ -394,18 +412,22 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
         ),
       )
 
-      // On first successful tile, calibrate camera height to local terrain.
+      // On first successful tile, refresh fallback elevation and re-snap player.
       if (!elevCalibrated) {
         for (const r of results) {
           if (r.status === 'fulfilled' && r.value) {
-            ELEV_Y = r.value.elevMin
+            fallbackElevY = r.value.elevMin
             elevCalibrated = true
+            terrainHeight.invalidateCache()
             if (userMarker.visible) {
               syncPlayerWorldPosition(playerTarget.x, playerTarget.z)
             }
             break
           }
         }
+      } else if (userMarker.visible) {
+        terrainHeight.invalidateCache()
+        syncPlayerWorldPosition(playerTarget.x, playerTarget.z)
       }
     }
   }

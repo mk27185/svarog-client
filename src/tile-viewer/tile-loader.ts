@@ -54,6 +54,7 @@ export interface LoadedTile {
   group:            THREE.Group
   descriptor:       TileDescriptor
   elevMin:          number
+  terrainMesh?:     THREE.Mesh
   terrainMaterial?: THREE.ShaderMaterial
   navmesh?:         NavmeshTileData | null
   navmeshDebug?:    THREE.LineSegments | null
@@ -191,6 +192,7 @@ export async function loadTile(
     group: gltf.scene,
     descriptor: desc,
     elevMin,
+    terrainMesh: terrainNode,
     terrainMaterial: sdfMat,
     navmesh,
     navmeshDebug,
