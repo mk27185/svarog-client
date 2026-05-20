@@ -49,6 +49,17 @@ jobs:
         working-directory: ${{ github.workspace }}/../svarog-contracts
         run: npm ci && npm run build
 
+      - name: Verify svarog-contracts JSON exports
+        run: |
+          set -euo pipefail
+          CONTRACTS="${{ github.workspace }}/../svarog-contracts"
+          for f in world-config.json game-runtime.json; do
+            if [ ! -f "$CONTRACTS/$f" ]; then
+              echo "::error::Missing $f in svarog-contracts (push main in svarog-contracts repo first)."
+              exit 1
+            fi
+          done
+
       - run: npm ci
 
       # Produční API URL musí existovat už při vite build (--mode production), jinak v APK zůstane localhost.
