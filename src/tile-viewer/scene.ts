@@ -21,7 +21,13 @@ import {
   latLonToTileXY,
   tileXYToLatLon,
 } from './geo'
-import { loadTile, prepareTilesRemote, type LoadedTile, type TileDescriptor } from './tile-loader'
+import {
+  loadTile,
+  prepareTilesRemote,
+  setNavmeshDebugVisible,
+  type LoadedTile,
+  type TileDescriptor,
+} from './tile-loader'
 import { tilesetUrl, tileAssetsPathPrefix } from './tiles-config'
 import type { TileViewerTheme } from './theme'
 import {
@@ -41,6 +47,8 @@ import { createPostProcessing, resizeComposer } from './post-processing'
 interface TilesetExtras {
   svarog_version?: string
   has_sdf?:        boolean
+  has_landcover?:  boolean
+  has_navmesh?:    boolean
   elev_min?:       number | null
   elev_max?:       number | null
 }
@@ -119,7 +127,8 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   const [lonW, latS, lonE, latN] = tileset.bounds
   const originLat      = (latS + latN) / 2
   const originLon      = (lonW + lonE) / 2
-  const globalHasSdf   = tileset.extras?.has_sdf ?? false
+  const globalHasSdf       = tileset.extras?.has_sdf ?? false
+  const globalHasLandcover = tileset.extras?.has_landcover ?? false
   const tileRange      = boundsToTileRange(tileset.bounds, zoom)
 
   // Global elevation range — shared across ALL tiles so that per-tile
@@ -188,7 +197,12 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   function makeDescriptor(x: number, y: number): TileDescriptor {
     const c = tileXYToLatLon(zoom, x, y)
     const { offsetX, offsetZ } = geoToWorld(c.lat, c.lon, originLat, originLon)
-    return { z: zoom, x, y, offsetX, offsetZ, hasSdf: globalHasSdf, tileLat: c.lat }
+    return {
+      z: zoom, x, y, offsetX, offsetZ,
+      hasSdf: globalHasSdf,
+      hasLandcover: globalHasLandcover,
+      tileLat: c.lat,
+    }
   }
 
   /**
@@ -230,6 +244,10 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
       unregisterTerrainMaterial(lt.terrainMaterial)
       lt.terrainMaterial.dispose()
     }
+    if (lt.navmeshDebug) {
+      lt.navmeshDebug.geometry.dispose()
+      ;(lt.navmeshDebug.material as THREE.Material).dispose()
+    }
     lt.group.traverse((obj) => {
       if (!(obj instanceof THREE.Mesh)) return
       obj.geometry.dispose()
@@ -241,6 +259,12 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
     liveTiles.delete(key)
   }
 
+  function applyNavmeshDebugToAllTiles(visible: boolean): void {
+    for (const lt of liveTiles.values()) {
+      setNavmeshDebugVisible(lt, visible)
+    }
+  }
+
   function applyFullTheme(theme: TileViewerTheme): void {
     applyThemeToScene(sceneTargets, theme)
     colorGrade.applyTheme(theme)
@@ -250,6 +274,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   applyFullTheme(getTheme())
   const unsubTheme = subscribeTheme((theme) => {
     applyFullTheme(theme)
+    applyNavmeshDebugToAllTiles(theme.showNavmeshDebug)
   })
 
   let elevCalibrated = false
@@ -291,7 +316,10 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
     for (let i = 0; i < toLoad.length; i += BATCH) {
       const results = await Promise.allSettled(
         toLoad.slice(i, i + BATCH).map((d) =>
-          loadTile(scene, d, assetsPrefix, globalElevMin, globalElevRange, originLat)
+          loadTile(
+            scene, d, assetsPrefix, globalElevMin, globalElevRange, originLat,
+            getTheme().showNavmeshDebug,
+          )
             .then((lt) => {
               const k = tileKey(d.x, d.y)
               inFlight.delete(k)

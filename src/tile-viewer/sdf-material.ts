@@ -3,6 +3,11 @@
  *
  * SDF texture channels (sdf_generator.py):
  *   R  signed-distance  |  G  road importance  |  B  width  |  A  mask
+ *
+ * Landcover texture (landcover_generator.py):
+ *   R  water bodies  |  G  rivers  |  B  green  |  A  railways
+ *
+ * Blend order: terrain → green → water → rivers → railways → roads (top)
  */
 
 import * as THREE from 'three'
@@ -31,14 +36,20 @@ const FRAG = /* glsl */`
   precision mediump float;
 
   uniform sampler2D uSdfTexture;
+  uniform sampler2D uLandcoverTexture;
   uniform sampler2D uRoadPalette;
   uniform bool      uHasSdf;
+  uniform bool      uHasLandcover;
   uniform bool      uUseHighwayPalette;
 
   uniform vec3 uTerrainLow;
   uniform vec3 uTerrainHigh;
   uniform vec3 uRoadDark;
   uniform vec3 uRoadLight;
+  uniform vec3 uWaterColor;
+  uniform vec3 uRiverColor;
+  uniform vec3 uGreenColor;
+  uniform vec3 uRailColor;
 
   uniform vec3  uSunDirection;
   uniform float uAmbient;
@@ -64,6 +75,31 @@ const FRAG = /* glsl */`
     float light = lambert(vWorldNormal);
     tColor *= light;
 
+    if (uHasLandcover) {
+      vec4 lc = texture(uLandcoverTexture, vSdfUv);
+      float gMask = lc.b;
+      float wMask = lc.r;
+      float rMask = lc.g;
+      float railMask = lc.a;
+
+      if (gMask > 0.04) {
+        vec3 c = uGreenColor * light;
+        tColor = mix(tColor, c, smoothstep(0.04, 0.35, gMask));
+      }
+      if (wMask > 0.04) {
+        vec3 c = uWaterColor * light;
+        tColor = mix(tColor, c, smoothstep(0.04, 0.40, wMask));
+      }
+      if (rMask > 0.04) {
+        vec3 c = uRiverColor * light;
+        tColor = mix(tColor, c, smoothstep(0.04, 0.50, rMask));
+      }
+      if (railMask > 0.04) {
+        vec3 c = uRailColor * light;
+        tColor = mix(tColor, c, smoothstep(0.04, 0.45, railMask));
+      }
+    }
+
     if (uHasSdf) {
       vec4  sdf        = texture(uSdfTexture, vSdfUv);
       float roadMask   = sdf.a;
@@ -88,28 +124,38 @@ const FRAG = /* glsl */`
 
 export interface SdfMaterialOptions {
   sdfTexture?: THREE.Texture
+  landcoverTexture?: THREE.Texture
   elevMin?:    number
   elevRange?:  number
 }
 
 export function createSdfMaterial(opts: SdfMaterialOptions = {}): THREE.ShaderMaterial {
+  const hasSdf = opts.sdfTexture != null
+  const hasLc  = opts.landcoverTexture != null
+
   const mat = new THREE.ShaderMaterial({
     vertexShader:   VERT,
     fragmentShader: FRAG,
     uniforms: {
-      uSdfTexture:       { value: opts.sdfTexture ?? null },
-      uRoadPalette:      { value: getSharedRoadPalette() },
-      uHasSdf:           { value: opts.sdfTexture != null },
-      uUseHighwayPalette:{ value: false },
-      uTerrainLow:       { value: new THREE.Vector3(0.28, 0.48, 0.18) },
-      uTerrainHigh:      { value: new THREE.Vector3(0.60, 0.50, 0.30) },
-      uRoadDark:         { value: new THREE.Vector3(0.36, 0.36, 0.40) },
-      uRoadLight:        { value: new THREE.Vector3(0.72, 0.70, 0.65) },
-      uSunDirection:     { value: new THREE.Vector3(0.6, 1.0, 0.5).normalize() },
-      uAmbient:          { value: 0.40 },
-      uSunStrength:      { value: 0.60 },
-      uElevMin:          { value: opts.elevMin   ?? 220.0 },
-      uElevRange:        { value: opts.elevRange ?? 70.0  },
+      uSdfTexture:        { value: opts.sdfTexture ?? null },
+      uLandcoverTexture:  { value: opts.landcoverTexture ?? null },
+      uRoadPalette:       { value: getSharedRoadPalette() },
+      uHasSdf:            { value: hasSdf },
+      uHasLandcover:      { value: hasLc },
+      uUseHighwayPalette: { value: false },
+      uTerrainLow:        { value: new THREE.Vector3(0.28, 0.48, 0.18) },
+      uTerrainHigh:       { value: new THREE.Vector3(0.60, 0.50, 0.30) },
+      uRoadDark:          { value: new THREE.Vector3(0.36, 0.36, 0.40) },
+      uRoadLight:         { value: new THREE.Vector3(0.72, 0.70, 0.65) },
+      uWaterColor:        { value: new THREE.Vector3(0.25, 0.45, 0.72) },
+      uRiverColor:        { value: new THREE.Vector3(0.30, 0.52, 0.78) },
+      uGreenColor:        { value: new THREE.Vector3(0.32, 0.55, 0.28) },
+      uRailColor:         { value: new THREE.Vector3(0.45, 0.42, 0.40) },
+      uSunDirection:      { value: new THREE.Vector3(0.6, 1.0, 0.5).normalize() },
+      uAmbient:           { value: 0.40 },
+      uSunStrength:       { value: 0.60 },
+      uElevMin:           { value: opts.elevMin   ?? 220.0 },
+      uElevRange:         { value: opts.elevRange ?? 70.0  },
     },
     side:        THREE.DoubleSide,
     glslVersion: THREE.GLSL3,
@@ -129,6 +175,10 @@ export function applyThemeToMaterial(
   u.uTerrainHigh!.value.set(...hexToVec3(theme.terrainHigh))
   u.uRoadDark!.value.set(...hexToVec3(theme.roadDark))
   u.uRoadLight!.value.set(...hexToVec3(theme.roadLight))
+  u.uWaterColor!.value.set(...hexToVec3(theme.water))
+  u.uRiverColor!.value.set(...hexToVec3(theme.river))
+  u.uGreenColor!.value.set(...hexToVec3(theme.green))
+  u.uRailColor!.value.set(...hexToVec3(theme.rail))
   u.uUseHighwayPalette!.value = theme.useHighwayPalette
   u.uRoadPalette!.value = getSharedRoadPalette()
 
@@ -146,8 +196,18 @@ export function updateSdfTexture(
   mat: THREE.ShaderMaterial,
   sdfTexture: THREE.Texture,
 ): void {
+  sdfTexture.flipY = false
   mat.uniforms.uSdfTexture!.value = sdfTexture
   mat.uniforms.uHasSdf!.value    = true
+}
+
+export function updateLandcoverTexture(
+  mat: THREE.ShaderMaterial,
+  landcoverTexture: THREE.Texture,
+): void {
+  landcoverTexture.flipY = false
+  mat.uniforms.uLandcoverTexture!.value = landcoverTexture
+  mat.uniforms.uHasLandcover!.value     = true
 }
 
 export function syncSunUniform(
