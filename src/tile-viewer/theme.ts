@@ -14,9 +14,14 @@ export interface TileViewerTheme {
   terrainHigh: string
   roadDark: string
   roadLight: string
+  water: string
+  river: string
+  green: string
+  rail: string
   useHighwayPalette: boolean
   highwayStops: HighwayColorStop[]
   building: string
+  showNavmeshDebug: boolean
   sky: string
   fog: string
   fogNear: number
@@ -46,7 +51,12 @@ export const DEFAULT_TILE_VIEWER_THEME: TileViewerTheme = {
   terrainHigh: '#99804d',
   roadDark:    '#5c5c66',
   roadLight:   '#b8b3a6',
+  water:       '#3d7ab8',
+  river:       '#4a8fc4',
+  green:       '#4a8f3c',
+  rail:        '#6b6560',
   useHighwayPalette: false,
+  showNavmeshDebug: false,
   highwayStops: DEFAULT_HIGHWAY_STOPS.map((s) => ({ ...s })),
   building:    '#9ba5b4',
   sky:         '#7faed0',

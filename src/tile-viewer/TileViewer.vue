@@ -1,19 +1,30 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { SdDrawer } from 'svarog-design'
+import gameRuntime from 'svarog-contracts/game-runtime.json'
 import { initScene, type SceneHandle } from './scene'
 import { useTileViewerGeolocation } from './useTileViewerGeolocation'
+import { useGyro } from './useGyro'
 import TileViewerSettingsPanel from './TileViewerSettingsPanel.vue'
 
 const canvasRef = ref<HTMLCanvasElement>()
 let handle: SceneHandle | null = null
+let firstGpsFix = true
 
 const status  = ref<'loading' | 'ready' | 'error'>('loading')
 const message = ref('Initialising scene…')
 const settingsOpen = ref(false)
+const rotationMode = ref<'sensor' | 'manual'>('sensor')
 
 const geo       = useTileViewerGeolocation()
+const gyro      = useGyro(false)
 const geoBanner = ref<string | null>(null)
+
+const COMPASS_CALIBRATION = gameRuntime.camera.compass_calibration_deg
+
+function normalizeDegrees(angle: number): number {
+  return (angle % 360 + 360) % 360
+}
 
 watch(
   () => [geo.status.value, geo.message.value] as const,
@@ -26,16 +37,53 @@ watch(
   },
 )
 
+watch(
+  () => gyro.data.value.compassHeading,
+  (heading) => {
+    if (!handle || rotationMode.value !== 'sensor' || heading === null) return
+    const headingForCamera = normalizeDegrees(heading + COMPASS_CALIBRATION)
+    handle.camera.setAzimuth(-headingForCamera)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => gyro.data.value.effectiveTilt,
+  (tilt) => {
+    if (!handle || rotationMode.value !== 'sensor' || tilt === null) return
+    handle.camera.setElevation(tilt)
+  },
+)
+
+watch(
+  () => rotationMode.value,
+  (mode) => {
+    if (mode === 'sensor') gyro.enable()
+    else gyro.disable()
+  },
+)
+
+function toggleCameraMode() {
+  handle?.camera.toggleRotationMode()
+  rotationMode.value = handle?.camera.rotationMode ?? rotationMode.value
+}
+
 onMounted(async () => {
   if (!canvasRef.value) return
   try {
     handle = await initScene(canvasRef.value)
+    rotationMode.value = handle.camera.rotationMode
     status.value  = 'ready'
     message.value = ''
 
+    if (rotationMode.value === 'sensor' && gyro.checkSupport()) {
+      await gyro.requestPermission()
+    }
+
     geoBanner.value = 'Zjišťuji polohu (GPS)…'
     void geo.start((p) => {
-      handle?.focusAtGps(p.latitude, p.longitude)
+      handle?.focusAtGps(p.latitude, p.longitude, p.accuracy, firstGpsFix)
+      firstGpsFix = false
       const acc = p.accuracy > 0 ? ` ±${Math.round(p.accuracy)} m` : ''
       geoBanner.value = `GPS ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}${acc}`
     })
@@ -62,18 +110,27 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <button
-      v-if="status === 'ready'"
-      type="button"
-      class="fab-settings"
-      aria-label="Nastavení vzhledu"
-      @click="settingsOpen = true"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <circle cx="12" cy="12" r="3" />
-        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-      </svg>
-    </button>
+    <div v-if="status === 'ready'" class="fab-row">
+      <button
+        type="button"
+        class="fab"
+        :title="rotationMode === 'sensor' ? 'Gyroskop — klepnutím manuální' : 'Manuální — klepnutím gyroskop'"
+        @click="toggleCameraMode"
+      >
+        {{ rotationMode === 'sensor' ? '📱' : '🖱️' }}
+      </button>
+      <button
+        type="button"
+        class="fab"
+        aria-label="Nastavení vzhledu"
+        @click="settingsOpen = true"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+        </svg>
+      </button>
+    </div>
 
     <div v-if="geoBanner" class="gps-strip">{{ geoBanner }}</div>
 
@@ -147,11 +204,17 @@ onBeforeUnmount(() => {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.fab-settings {
+.fab-row {
   position: absolute;
   right: 16px;
   bottom: max(16px, env(safe-area-inset-bottom));
   z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fab {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -164,9 +227,11 @@ onBeforeUnmount(() => {
   cursor: pointer;
   backdrop-filter: blur(8px);
   transition: background 0.15s ease;
+  font-size: 20px;
+  line-height: 1;
 }
 
-.fab-settings:hover {
+.fab:hover {
   background: rgba(24, 36, 56, 0.92);
 }
 

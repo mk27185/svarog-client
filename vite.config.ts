@@ -10,7 +10,8 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 const designRoot = path.resolve(dirname, '../svarog-design/src');
 //const TILES_ROOT = path.resolve(dirname, '../svarog-engine/outputs/prague_200m');
 //const TILES_ROOT = path.resolve(dirname, '../svarog-engine/outputs/praha-test');
-const TILES_ROOT = path.resolve(dirname, '../svarog-engine/outputs/prague-outer');
+//const TILES_ROOT = path.resolve(dirname, '../svarog-engine/outputs/prague-outer');
+const TILES_ROOT = path.resolve(dirname, '../svarog-engine/outputs/prague-outer-single-glb');
 
 const EXT_TYPES: Record<string, string> = {
   '.glb':  'model/gltf-binary',

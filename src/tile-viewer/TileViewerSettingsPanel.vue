@@ -23,7 +23,10 @@ function patch<K extends keyof TileViewerTheme>(key: K, value: TileViewerTheme[K
   setTheme({ [key]: value })
 }
 
-function onColor(key: 'terrainLow' | 'terrainHigh' | 'roadDark' | 'roadLight' | 'building' | 'sky' | 'fog' | 'sunColor', e: Event) {
+function onColor(
+  key: 'terrainLow' | 'terrainHigh' | 'roadDark' | 'roadLight' | 'water' | 'river' | 'green' | 'rail' | 'building' | 'sky' | 'fog' | 'sunColor',
+  e: Event,
+) {
   patch(key, (e.target as HTMLInputElement).value)
 }
 
@@ -109,6 +112,28 @@ const stopLabels = [
     <SdDivider />
 
     <section>
+      <SdText as="h3" size="sm" weight="semibold">Voda a zeleň</SdText>
+      <label class="row">
+        <span>Vodní plochy</span>
+        <input type="color" :value="theme.water" @input="onColor('water', $event)" />
+      </label>
+      <label class="row">
+        <span>Řeky a potoky</span>
+        <input type="color" :value="theme.river" @input="onColor('river', $event)" />
+      </label>
+      <label class="row">
+        <span>Zeleň a parky</span>
+        <input type="color" :value="theme.green" @input="onColor('green', $event)" />
+      </label>
+      <label class="row">
+        <span>Železnice</span>
+        <input type="color" :value="theme.rail" @input="onColor('rail', $event)" />
+      </label>
+    </section>
+
+    <SdDivider />
+
+    <section>
       <SdText as="h3" size="sm" weight="semibold">Budovy a atmosféra</SdText>
       <label class="row">
         <span>Budovy</span>
@@ -151,6 +176,19 @@ const stopLabels = [
       <label class="row">
         <span>Exposure (tone mapping)</span>
         <input type="range" min="0.3" max="2.5" step="0.05" :value="theme.exposure" @input="onNumber('exposure', $event)" />
+      </label>
+    </section>
+
+    <SdDivider />
+
+    <section>
+      <SdText as="h3" size="sm" weight="semibold">Navigace (debug)</SdText>
+      <label class="row toggle-row">
+        <span>Zobrazit navmesh (drátěný model)</span>
+        <SdToggle
+          :model-value="theme.showNavmeshDebug"
+          @update:model-value="patch('showNavmeshDebug', $event)"
+        />
       </label>
     </section>
 
