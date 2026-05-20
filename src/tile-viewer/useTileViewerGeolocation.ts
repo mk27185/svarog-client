@@ -1,6 +1,7 @@
 import { ref, onUnmounted } from 'vue'
 import { Capacitor } from '@capacitor/core'
 import { Geolocation } from '@capacitor/geolocation'
+import gameRuntime from 'svarog-contracts/game-runtime.json'
 
 export interface TileGeoPosition {
   latitude: number
@@ -9,6 +10,8 @@ export interface TileGeoPosition {
 }
 
 export type GeoStatus = 'idle' | 'starting' | 'tracking' | 'denied' | 'unsupported' | 'error'
+
+const GPS = gameRuntime.gps
 
 export function useTileViewerGeolocation() {
   const status = ref<GeoStatus>('idle')
@@ -41,9 +44,9 @@ export function useTileViewerGeolocation() {
     }
 
     const opts: PositionOptions = {
-      enableHighAccuracy: true,
-      maximumAge: 5_000,
-      timeout: 20_000,
+      enableHighAccuracy: GPS.enable_high_accuracy,
+      maximumAge: GPS.maximum_age_ms,
+      timeout: GPS.timeout_ms,
     }
 
     try {

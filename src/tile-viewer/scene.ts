@@ -13,14 +13,17 @@
  */
 
 import * as THREE from 'three'
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import worldConfig from 'svarog-contracts/world-config.json'
+import gameRuntime from 'svarog-contracts/game-runtime.json'
 import {
   geoToWorld,
+  worldToGeo,
   boundsToTileRange,
   latLonToTileXY,
   tileXYToLatLon,
 } from './geo'
+import { createGpsKalmanFilter } from './gps-kalman'
+import { createThirdPersonCamera, type RotationMode, type ThirdPersonCamera } from './third-person-camera'
 import {
   loadTile,
   prepareTilesRemote,
@@ -72,14 +75,17 @@ interface Tileset {
  * load_radius_tiles:1 → 3×3 grid, 2 → 5×5, etc.
  */
 const WINDOW_HALF = worldConfig.load_radius_tiles
-const BATCH       = 4
+const BATCH       = gameRuntime.tiles.load_batch_size
+const TILE_LOAD_MIN_INTERVAL_MS = gameRuntime.tiles.load_min_interval_ms
+const TILE_RELOAD_MIN_MOVE_M    = gameRuntime.gps.display_min_move_meters
 
 // ── scene entry point ──────────────────────────────────────────────────────────
 
 export interface SceneHandle {
   renderer: THREE.WebGLRenderer
   origin: { lat: number; lon: number }
-  focusAtGps: (lat: number, lon: number) => void
+  camera: ThirdPersonCamera
+  focusAtGps: (lat: number, lon: number, accuracyM?: number, force?: boolean) => void
   setTheme: (partial: Partial<TileViewerTheme>) => TileViewerTheme
   getTheme: () => Readonly<TileViewerTheme>
   dispose: () => void
@@ -145,28 +151,33 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   // dataset-wide minimum (which can be 50–100 m below the user's location).
   let ELEV_Y = tileset.extras?.elev_min ?? 220
 
-  // initDist controls the zoom level on startup: 500 m gives a good overview
-  // of the 5×5 tile grid (≈750 m across at zoom 17).
-  const initDist = 500
+  const camCfg = gameRuntime.camera
+  const playerTarget = new THREE.Vector3(0, ELEV_Y, 0)
+
+  const positionKalman = createGpsKalmanFilter(gameRuntime.gps.kalman)
 
   // ── camera ─────────────────────────────────────────────────────────────────
-  const camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 1, 12000)
-  camera.position.set(0, ELEV_Y + initDist * 0.85, initDist)
-  camera.lookAt(0, ELEV_Y, 0)
+  const camera = new THREE.PerspectiveCamera(
+    camCfg.fov, canvas.clientWidth / canvas.clientHeight, 1, 12000,
+  )
 
-  const controls = new OrbitControls(camera, canvas)
-  controls.target.set(0, ELEV_Y, 0)
-  controls.minDistance   = 30
-  controls.maxDistance   = 8000
-  controls.maxPolarAngle = Math.PI / 2.05
-  controls.enableDamping = true
-  controls.dampingFactor = 0.08
+  const cameraController = createThirdPersonCamera(
+    camera,
+    canvas,
+    {
+      minDistance: camCfg.min_distance,
+      maxDistance: camCfg.max_distance,
+      minElevation: camCfg.min_elevation,
+      maxElevation: camCfg.max_elevation,
+      defaultDistance: camCfg.default_distance,
+      defaultElevation: camCfg.default_elevation,
+      defaultAzimuth: camCfg.default_azimuth,
+    },
+    camCfg.default_rotation_mode as RotationMode,
+  )
+  cameraController.setTarget(playerTarget)
 
   const { composer, colorGrade } = createPostProcessing(renderer, scene, camera)
-
-  // Fixed offset from target → camera so that focusAtGps just moves the target
-  // and the camera follows at the same relative distance and angle.
-  const cameraOffset = new THREE.Vector3().subVectors(camera.position, controls.target)
 
   // ── GPS marker ─────────────────────────────────────────────────────────────
   const markerGeom = new THREE.ConeGeometry(3.5, 14, 10)
@@ -278,6 +289,49 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   })
 
   let elevCalibrated = false
+  let lastTileLoadAt = 0
+  let pendingTileLoad: { lat: number; lon: number } | null = null
+  let tileLoadTimer: ReturnType<typeof setTimeout> | null = null
+  let lastTileLoadWorld: { x: number; z: number } | null = null
+
+  function scheduleLoadAround(lat: number, lon: number) {
+    pendingTileLoad = { lat, lon }
+    const elapsed = performance.now() - lastTileLoadAt
+    const delay = Math.max(0, TILE_LOAD_MIN_INTERVAL_MS - elapsed)
+
+    if (tileLoadTimer !== null) return
+
+    tileLoadTimer = setTimeout(() => {
+      tileLoadTimer = null
+      const p = pendingTileLoad
+      pendingTileLoad = null
+      if (!p) return
+      lastTileLoadAt = performance.now()
+      void loadAround(p.lat, p.lon)
+    }, delay)
+  }
+
+  function maybeScheduleTilesForFilteredPosition(force: boolean) {
+    if (!positionKalman.isInitialized()) return
+
+    const { x, z } = positionKalman.getPosition()
+    if (
+      force
+      || !lastTileLoadWorld
+      || Math.hypot(x - lastTileLoadWorld.x, z - lastTileLoadWorld.z) >= TILE_RELOAD_MIN_MOVE_M
+    ) {
+      lastTileLoadWorld = { x, z }
+      const geo = worldToGeo(x, z, originLat, originLon)
+      scheduleLoadAround(geo.lat, geo.lon)
+    }
+  }
+
+  function syncPlayerWorldPosition(offsetX: number, offsetZ: number) {
+    playerTarget.set(offsetX, ELEV_Y, offsetZ)
+    cameraController.setTarget(playerTarget)
+    userMarker.position.set(offsetX, ELEV_Y + 16, offsetZ)
+    userMarker.visible = true
+  }
 
   /**
    * Load the WINDOW_HALF×2+1 square of tiles around (lat, lon), clamped to
@@ -346,11 +400,8 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
           if (r.status === 'fulfilled' && r.value) {
             ELEV_Y = r.value.elevMin
             elevCalibrated = true
-            const cy = controls.target.y
-            if (Math.abs(cy - ELEV_Y) > 2) {
-              controls.target.setY(ELEV_Y)
-              camera.position.setY(camera.position.y + (ELEV_Y - cy))
-              controls.update()
+            if (userMarker.visible) {
+              syncPlayerWorldPosition(playerTarget.x, playerTarget.z)
             }
             break
           }
@@ -364,21 +415,33 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
 
   // ── GPS focus ──────────────────────────────────────────────────────────────
 
-  function focusAtGps(lat: number, lon: number) {
+  function focusAtGps(lat: number, lon: number, accuracyM = 0, force = false) {
     const { offsetX, offsetZ } = geoToWorld(lat, lon, originLat, originLon)
-    controls.target.set(offsetX, ELEV_Y, offsetZ)
-    camera.position.copy(controls.target).add(cameraOffset)
-    controls.update()
-    userMarker.position.set(offsetX, ELEV_Y + 16, offsetZ)
-    userMarker.visible = true
-    void loadAround(lat, lon)
+    if (!positionKalman.correct(offsetX, offsetZ, accuracyM, force)) return
+
+    const { x, z } = positionKalman.getPosition()
+    syncPlayerWorldPosition(x, z)
+    maybeScheduleTilesForFilteredPosition(force)
   }
 
   // ── render loop ────────────────────────────────────────────────────────────
   let animId: number
+  let lastFrameTime = performance.now()
   function animate() {
     animId = requestAnimationFrame(animate)
-    controls.update()
+
+    const now = performance.now()
+    const dt = Math.min((now - lastFrameTime) / 1000, 0.1)
+    lastFrameTime = now
+
+    if (positionKalman.isInitialized()) {
+      positionKalman.predict(dt)
+      const { x, z } = positionKalman.getPosition()
+      syncPlayerWorldPosition(x, z)
+      maybeScheduleTilesForFilteredPosition(false)
+    }
+
+    cameraController.update()
     syncSunOnAllMaterials(sun)
     composer.render()
   }
@@ -397,6 +460,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
   return {
     renderer,
     origin: { lat: originLat, lon: originLon },
+    camera: cameraController,
     focusAtGps,
     setTheme(partial) {
       const theme = applyStoredTheme(partial)
@@ -406,14 +470,15 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneHandle>
     getTheme,
     dispose() {
       cancelAnimationFrame(animId)
+      if (tileLoadTimer !== null) clearTimeout(tileLoadTimer)
       ro.disconnect()
       unsubTheme()
       composer.dispose()
+      cameraController.dispose()
       for (const key of [...liveTiles.keys()]) unloadTile(key)
       scene.remove(userMarker)
       markerGeom.dispose()
       markerMat.dispose()
-      controls.dispose()
       renderer.dispose()
     },
   }
