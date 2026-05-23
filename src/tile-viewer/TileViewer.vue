@@ -236,6 +236,7 @@ onBeforeUnmount(() => {
 }
 
 .gps-strip {
+  opacity: .03;
   position: absolute;
   top: max(16px, env(safe-area-inset-top));
   left: 50%;

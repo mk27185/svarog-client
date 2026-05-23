@@ -12,7 +12,7 @@ function goBack() {
 
 <template>
   <div class="map-page">
-    <header class="map-header">
+    <header class="map-header opacity-5">
       <SdButton variant="secondary" size="sm" @click="goBack">← Zpět</SdButton>
     </header>
     <TileViewer class="map-viewer" />
